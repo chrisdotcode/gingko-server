@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
+const proxy = require('express-http-proxy');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
@@ -37,6 +38,10 @@ app.post('/signup', async (req, res) => {
 });
 
 app.use(express.static("../client/web"));
+
+// Can only reach this route in dev machine.
+// On production server, nginx does the proxying.
+app.use('/db', proxy("localhost:5984"));
 
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../client/web/index.html'));
