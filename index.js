@@ -44,7 +44,6 @@ app.post('/export-docx', async (req, res) => {
   let srcFile = `./${req.body.docId}.tmp.md`;
   let outFile = `${req.body.docId}.docx`
   res.header('Content-Type', 'application/octet-stream; charset=utf-8');
-  res.header('Content-Disposition', 'attachment; filename=' + outFile);
 
   fs.writeFile(srcFile, req.body.markdown, () => {
     let args =['-f', 'markdown', '-t', 'docx', '-o', outFile]
