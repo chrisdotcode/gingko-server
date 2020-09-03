@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs')
 const path = require('path');
 const axios = require('axios');
 const proxy = require('express-http-proxy');
@@ -6,6 +7,7 @@ const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
 const promiseRetry = require("promise-retry");
+const nodePandoc = require("node-pandoc");
 const app = express();
 const port = 3000;
 
@@ -35,6 +37,21 @@ app.post('/signup', async (req, res) => {
   let data = {name: email, db: userDbName};
 
   res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+});
+
+app.post('/export-docx', async (req, res) => {
+  // receive Markdown string, return file download of docx
+  let srcFile = `./${req.body.docId}.tmp.md`;
+  let outFile = `${req.body.docId}.docx`
+  res.header('Content-Type', 'application/octet-stream; charset=utf-8');
+  res.header('Content-Disposition', 'attachment; filename=' + outFile);
+
+  fs.writeFile(srcFile, req.body.markdown, () => {
+    let args =['-f', 'markdown', '-t', 'docx', '-o', outFile]
+    nodePandoc(srcFile, args, () => {
+      fs.createReadStream(outFile).pipe(res);
+    })
+  });
 });
 
 app.use(express.static("../client/web"));
