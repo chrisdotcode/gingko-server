@@ -23,20 +23,26 @@ app.post('/signup', async (req, res) => {
     , roles: []
     , name: email
     , password: req.body.password
-    }, `org.couchdb.user:${email}`);
+    }, `org.couchdb.user:${email}`).catch(async e => e);
 
-  let loginRes = await axios.post("http://localhost:5984/_session", {
-    name: email,
-    password: req.body.password
-  })
+  if (dbRes.ok) {
+    let loginRes = await axios.post("http://localhost:5984/_session", {
+      name: email,
+      password: req.body.password
+    })
 
-  await promiseRetry((retry, attempt) => {
-    return nano.use(userDbName).insert(designDocList).catch(retry);
-  }, {minTimeout: 100});
+    await promiseRetry((retry, attempt) => {
+      return nano.use(userDbName).insert(designDocList).catch(retry);
+    }, {minTimeout: 100});
 
-  let data = {name: email, db: userDbName};
+    let data = {name: email, db: userDbName};
 
-  res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+    res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+  } else if (dbRes.error == "conflict"){
+    res.status(409).send();
+  } else {
+    res.status(500).send();
+  }
 });
 
 app.post('/export-docx', async (req, res) => {
