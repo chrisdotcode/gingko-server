@@ -63,7 +63,12 @@ app.use(express.static("../client/web"));
 
 // Can only reach this route in dev machine.
 // On production server, nginx does the proxying.
-app.use('/db', proxy("localhost:5984"));
+app.use('/db', proxy("localhost:5984", {
+  userResHeaderDecorator(headers) {
+    headers['x-timestamp'] = Date.now();
+    return headers;
+  }
+}));
 
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../client/web/index.html'));
