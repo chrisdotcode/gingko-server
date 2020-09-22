@@ -6,6 +6,7 @@ const proxy = require('express-http-proxy');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
+const sessionDB = nano.use("_session");
 const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
 const app = express();
@@ -13,6 +14,10 @@ const port = 3000;
 
 
 app.use(express.json({limit: '50mb'}));
+
+
+
+/* ==== Authentication ==== */
 
 app.post('/signup', async (req, res) => {
   let email = req.body.email;
@@ -35,7 +40,7 @@ app.post('/signup', async (req, res) => {
       return nano.use(userDbName).insert(designDocList).catch(retry);
     }, {minTimeout: 100});
 
-    let data = {name: email, db: userDbName};
+    let data = {name: email, db: userDbName, settings : null};
 
     res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
   } else if (dbRes.error == "conflict"){
@@ -44,6 +49,35 @@ app.post('/signup', async (req, res) => {
     res.status(500).send();
   }
 });
+
+
+app.post('/login', async (req, res) => {
+  let email = req.body.email;
+  let password = req.body.password;
+  let userDbName = `userdb-${toHex(email)}`;
+
+  try {
+    let loginRes = await axios.post("http://localhost:5984/_session" ,
+      { name: email,
+        password: password,
+      });
+
+    if (loginRes.status == 200) {
+      let userDb = nano.use(userDbName);
+      let settings = await userDb.get('settings').catch(e => null);
+      let data = { name: email, settings: settings };
+
+      res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+    }
+  } catch (err) {
+    res.status(err.response.status).send(err.response.data);
+  }
+});
+
+
+
+
+/* ==== Export ==== */
 
 app.post('/export-docx', async (req, res) => {
   // receive Markdown string, return file download of docx
@@ -59,22 +93,45 @@ app.post('/export-docx', async (req, res) => {
   });
 });
 
+
+
+
+/* ==== Static ==== */
+
 app.use(express.static("../client/web"));
+
+
+
+
+/* ==== Dev db proxy ==== */
 
 // Can only reach this route in dev machine.
 // On production server, nginx does the proxying.
 app.use('/db', proxy("localhost:5984", {
-  userResHeaderDecorator(headers) {
+  async userResHeaderDecorator(headers) {
     headers['x-timestamp'] = Date.now();
+    //await new Promise(r => setTimeout(r, 1000));
     return headers;
   }
 }));
 
+
+
+
+/* ==== Single Page App ==== */
+
+// Respond to all non-file requests with index.html
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../client/web/index.html'));
 });
 
+
+
+/* ==== Start Server ==== */
+
 app.listen(port, () => console.log(`Example app listening at https://localhost:${port}`));
+
+
 
 
 /* === HELPERS === */
