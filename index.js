@@ -40,7 +40,7 @@ app.post('/signup', async (req, res) => {
       return nano.use(userDbName).insert(designDocList).catch(retry);
     }, {minTimeout: 100});
 
-    let data = {name: email, db: userDbName, settings : null};
+    let data = {email: email, db: userDbName};
 
     res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
   } else if (dbRes.error == "conflict"){
@@ -65,7 +65,7 @@ app.post('/login', async (req, res) => {
     if (loginRes.status == 200) {
       let userDb = nano.use(userDbName);
       let settings = await userDb.get('settings').catch(e => null);
-      let data = { name: email, settings: settings };
+      let data = { email: email, settings: settings };
 
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
     }
