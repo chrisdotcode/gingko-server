@@ -109,8 +109,6 @@ app.use(express.static("../client/web"));
 // On production server, nginx does the proxying.
 app.use('/db', proxy("localhost:5984", {
   async userResHeaderDecorator(headers) {
-    headers['x-timestamp'] = Date.now();
-    //await new Promise(r => setTimeout(r, 1000));
     return headers;
   }
 }));
