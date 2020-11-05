@@ -1,6 +1,9 @@
 const express = require('express');
 const fs = require('fs')
 const path = require('path');
+const URLSafeBase64 = require('urlsafe-base64');
+const uuid = require('uuid');
+const crypto = require('crypto');
 const axios = require('axios');
 const proxy = require('express-http-proxy');
 const config = require("./config.js");
@@ -70,6 +73,63 @@ app.post('/login', async (req, res) => {
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
     }
   } catch (err) {
+    res.status(err.response.status).send(err.response.data);
+  }
+});
+
+
+app.post('/forgot-password', async (req, res) => {
+  let email = req.body.email;
+  try {
+    let user = await usersDB.get(`org.couchdb.user:${email}`);
+
+    let token = newToken();
+    console.log(token)
+    user.resetToken = hashToken(token);
+    user.resetExpiry = Date.now() + 3600*1000; // one hour expiry
+    console.log(user)
+
+    const dbRes = await usersDB.insert(user);
+
+    if (dbRes.ok) {
+      //send email
+      console.log(`Your reset url is:\nhttp://localhost:3000/reset-password/${token}`)
+    }
+  } catch (err) {
+    console.log(err)
+  }
+});
+
+
+app.post('/reset-password', async (req, res) => {
+  let token = req.body.token;
+  let newPassword = req.body.password;
+
+  try {
+    let searchRes = await usersDB.find({"selector": {"resetToken": hashToken(token)}});
+    let user = searchRes.docs[0];
+    let email = user.name;
+    console.log("USER", user);
+    let userDbName = `userdb-${toHex(user.email)}`;
+
+    // change password and save to DB
+    user.password = newPassword;
+    const dbRes = await usersDB.insert(user);
+
+    if (dbRes.ok) {
+      let loginRes = await axios.post("http://localhost:5984/_session", {
+        name: email,
+        password: newPassword
+      })
+
+      let data = {email: email, db: userDbName};
+
+      res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+    } else {
+      res.status(500).send();
+    }
+  } catch (err) {
+    console.log(err)
     res.status(err.response.status).send(err.response.data);
   }
 });
@@ -155,4 +215,14 @@ function toHex(s) {
         h += s.charCodeAt(i).toString(16);
     }
     return h;
+}
+
+
+function newToken() {
+ return URLSafeBase64.encode(uuid.v4(null, new Buffer(16)));
+}
+
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
