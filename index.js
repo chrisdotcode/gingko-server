@@ -92,7 +92,7 @@ app.post('/forgot-password', async (req, res) => {
     const dbRes = await usersDB.insert(user);
 
     if (dbRes.ok) {
-      //send email
+      //TODO: send email
       console.log(`Your reset url is:\nhttp://localhost:3000/reset-password/${token}`)
     }
   } catch (err) {
@@ -109,11 +109,12 @@ app.post('/reset-password', async (req, res) => {
     let searchRes = await usersDB.find({"selector": {"resetToken": hashToken(token)}});
     let user = searchRes.docs[0];
     let email = user.name;
-    console.log("USER", user);
     let userDbName = `userdb-${toHex(user.email)}`;
 
     // change password and save to DB
     user.password = newPassword;
+    delete user.resetToken;
+    delete user.resetExpiry;
     const dbRes = await usersDB.insert(user);
 
     if (dbRes.ok) {
@@ -122,9 +123,13 @@ app.post('/reset-password', async (req, res) => {
         password: newPassword
       })
 
-      let data = {email: email, db: userDbName};
+      if (loginRes.status == 200) {
+        let userDb = nano.use(userDbName);
+        let settings = await userDb.get('settings').catch(e => null);
+        let data = { email: email, settings: settings };
 
-      res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+        res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
+      }
     } else {
       res.status(500).send();
     }
