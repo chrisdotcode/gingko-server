@@ -5,6 +5,7 @@ const URLSafeBase64 = require('urlsafe-base64');
 const uuid = require('uuid');
 const crypto = require('crypto');
 const axios = require('axios');
+const sgMail = require('@sendgrid/mail');
 const proxy = require('express-http-proxy');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
@@ -12,12 +13,16 @@ const usersDB = nano.use("_users");
 const sessionDB = nano.use("_session");
 const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
+
+
+/* ==== SETUP ==== */
+
 const app = express();
 const port = 3000;
 
-
 app.use(express.json({limit: '50mb'}));
 
+sgMail.setApiKey(config.SENDGRID_API_KEY);
 
 
 /* ==== Authentication ==== */
@@ -84,16 +89,21 @@ app.post('/forgot-password', async (req, res) => {
     let user = await usersDB.get(`org.couchdb.user:${email}`);
 
     let token = newToken();
-    console.log(token)
     user.resetToken = hashToken(token);
     user.resetExpiry = Date.now() + 3600*1000; // one hour expiry
-    console.log(user)
 
     const dbRes = await usersDB.insert(user);
 
     if (dbRes.ok) {
-      //TODO: send email
-      console.log(`Your reset url is:\nhttp://localhost:3000/reset-password/${token}`)
+      const msg = {
+        to: email,
+        from: config.SUPPORT_EMAIL,
+        subject: 'Password Reset link for Gingko.io',
+        text: `The reset link: https://app.gingko.io/reset-password/${token}`,
+        html: `The reset link: https://app.gingko.io/reset-password/${token}`
+      }
+
+      await sgMail.send(msg);
     }
   } catch (err) {
     console.log(err)
