@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs')
 const path = require('path');
+const process = require('process');
 const URLSafeBase64 = require('urlsafe-base64');
 const uuid = require('uuid');
 const crypto = require('crypto');
@@ -18,7 +19,7 @@ const nodePandoc = require("node-pandoc");
 /* ==== SETUP ==== */
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(express.json({limit: '50mb'}));
 
