@@ -83,6 +83,16 @@ app.post('/login', async (req, res) => {
 });
 
 
+app.post('/logout', async (req, res) => {
+  try {
+    let logoutRes = await axios.delete("http://localhost:5984/_session");
+    res.status(200).cookie(logoutRes.headers['set-cookie']).send();
+  } catch (err) {
+    res.send(err)
+  }
+});
+
+
 app.post('/forgot-password', async (req, res) => {
   let email = req.body.email;
   try {
