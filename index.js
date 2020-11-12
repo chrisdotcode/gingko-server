@@ -51,13 +51,10 @@ app.post('/signup', async (req, res) => {
 
     let data = {email: email, db: userDbName};
 
-    console.log("dbRes ok", dbRes, loginRes)
     res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
   } else if (dbRes.error == "conflict"){
-    console.log("Signup conflict", dbRes);
     res.status(409).send();
   } else {
-    console.log("Other signup error", dbRes);
     res.status(500).send();
   }
 });
