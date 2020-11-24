@@ -109,9 +109,9 @@ app.post('/forgot-password', async (req, res) => {
       const msg = {
         to: email,
         from: config.SUPPORT_EMAIL,
-        subject: 'Password Reset link for Gingko.io',
-        text: `The reset link: https://app.gingko.io/reset-password/${token}`,
-        html: `The reset link: https://app.gingko.io/reset-password/${token}`
+        subject: 'Password Reset link for Gingkowriter.com',
+        text: `The reset link: https://app.gingkowriter.com/reset-password/${token}`,
+        html: `The reset link: https://app.gingkowriter.com/reset-password/${token}`
       }
 
       await sgMail.send(msg);
