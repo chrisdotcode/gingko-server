@@ -74,7 +74,8 @@ app.post('/login', async (req, res) => {
     if (loginRes.status == 200) {
       let userDb = nano.use(userDbName);
       let settings = await userDb.get('settings').catch(e => null);
-      let data = { email: email, settings: settings };
+      let docListRes = await userDb.view('testDocList','docList');
+      let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
 
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
     }
