@@ -163,6 +163,49 @@ app.post('/reset-password', async (req, res) => {
 
 
 
+/* ==== Payment ==== */
+
+const Stripe = require('stripe');
+const stripe = Stripe(config.STRIPE_SECRET_KEY);
+
+app.post('/create-checkout-session', async (req, res) => {
+  const { priceId } = req.body;
+
+  // See https://stripe.com/docs/api/checkout/sessions/create
+  // for additional parameters to pass.
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price: priceId,
+          // For metered billing, do not pass quantity
+          quantity: 1,
+        },
+      ],
+      // {CHECKOUT_SESSION_ID} is a string literal; do not change it!
+      // the actual Session ID is returned in the query parameter when your customer
+      // is redirected to the success page.
+      success_url: config.URL_ROOT + '/upgrade/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: config.URL_ROOT + '/upgrade/cancelled',
+    });
+
+    res.send({
+      sessionId: session.id,
+    });
+  } catch (e) {
+    res.status(400);
+    return res.send({
+      error: {
+        message: e.message,
+      }
+    });
+  }
+});
+
+
+
 
 /* ==== Export ==== */
 
