@@ -188,7 +188,7 @@ app.post('/create-checkout-session', async (req, res) => {
       // the actual Session ID is returned in the query parameter when your customer
       // is redirected to the success page.
       success_url: config.URL_ROOT + '/upgrade/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: config.URL_ROOT + '/upgrade/cancelled',
+      cancel_url: config.URL_ROOT,
     });
 
     res.send({
