@@ -206,14 +206,24 @@ app.post('/create-checkout-session', async (req, res) => {
 });
 
 
-app.post('/hooks', (req, res) => {
+app.post('/hooks', async (req, res) => {
   let event = req.body;
-
 
   // Handle the event
   switch (event.type) {
     case 'checkout.session.completed':
-      console.log(event.data.object);
+      // Get data from event
+      let email = event.data.object.customer_email;
+      let custId = event.data.object.customer;
+
+      // Get user's database
+      let userDbName = `userdb-${toHex(email)}`;
+      let userDb = nano.use(userDbName);
+
+      // Update user's settings
+      let settings = await userDb.get('settings').catch(e => null);
+      settings.customer = custId;
+      let dbSaveRes = await userDb.insert(settings);
       break;
     case 'payment_method.attached':
       const paymentMethod = event.data.object;
