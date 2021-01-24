@@ -169,7 +169,7 @@ const Stripe = require('stripe');
 const stripe = Stripe(config.STRIPE_SECRET_KEY);
 
 app.post('/create-checkout-session', async (req, res) => {
-  const { priceId } = req.body;
+  const { priceId, customer_email } = req.body;
 
   // See https://stripe.com/docs/api/checkout/sessions/create
   // for additional parameters to pass.
@@ -184,6 +184,7 @@ app.post('/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
+      customer_email: customer_email,
       // {CHECKOUT_SESSION_ID} is a string literal; do not change it!
       // the actual Session ID is returned in the query parameter when your customer
       // is redirected to the success page.
