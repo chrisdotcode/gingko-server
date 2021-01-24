@@ -187,7 +187,7 @@ app.post('/create-checkout-session', async (req, res) => {
       // {CHECKOUT_SESSION_ID} is a string literal; do not change it!
       // the actual Session ID is returned in the query parameter when your customer
       // is redirected to the success page.
-      success_url: config.URL_ROOT + '/upgrade/success?session_id={CHECKOUT_SESSION_ID}',
+      success_url: config.URL_ROOT + '/payment/success?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: config.URL_ROOT,
     });
 
@@ -202,6 +202,30 @@ app.post('/create-checkout-session', async (req, res) => {
       }
     });
   }
+});
+
+
+app.post('/hooks', (req, res) => {
+  let event = req.body;
+
+
+  // Handle the event
+  switch (event.type) {
+    case 'checkout.session.completed':
+      console.log(event.data.object);
+      break;
+    case 'payment_method.attached':
+      const paymentMethod = event.data.object;
+      // Then define and call a method to handle the successful attachment of a PaymentMethod.
+      // handlePaymentMethodAttached(paymentMethod);
+      break;
+    // ... handle other event types
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  // Return a res to acknowledge receipt of the event
+  res.json({received: true});
 });
 
 
