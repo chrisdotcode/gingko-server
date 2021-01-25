@@ -171,8 +171,6 @@ const stripe = Stripe(config.STRIPE_SECRET_KEY);
 app.post('/create-checkout-session', async (req, res) => {
   const { priceId, customer_email } = req.body;
 
-  // See https://stripe.com/docs/api/checkout/sessions/create
-  // for additional parameters to pass.
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -180,15 +178,11 @@ app.post('/create-checkout-session', async (req, res) => {
       line_items: [
         {
           price: priceId,
-          // For metered billing, do not pass quantity
           quantity: 1,
         },
       ],
       customer_email: customer_email,
-      // {CHECKOUT_SESSION_ID} is a string literal; do not change it!
-      // the actual Session ID is returned in the query parameter when your customer
-      // is redirected to the success page.
-      success_url: config.URL_ROOT + '/payment/success?session_id={CHECKOUT_SESSION_ID}',
+      success_url: config.URL_ROOT + '/upgrade/success?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: config.URL_ROOT,
     });
 
