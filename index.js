@@ -80,7 +80,11 @@ app.post('/login', async (req, res) => {
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
     }
   } catch (err) {
-    res.status(err.response.status).send(err.response.data);
+    if (err.error === 'not_found') {
+      res.status(404).send(err);
+    } else {
+      res.status(err.response.status).send(err.response.data);
+    }
   }
 });
 
