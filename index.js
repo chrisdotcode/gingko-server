@@ -74,7 +74,9 @@ app.post('/login', async (req, res) => {
     if (loginRes.status == 200) {
       let userDb = nano.use(userDbName);
       let settings = await userDb.get('settings').catch(e => null);
-      let docListRes = await userDb.view('testDocList','docList');
+      let docListRes = await promiseRetry((retry, attempt) => {
+        return userDb.view('testDocList', 'docList').catch(retry);
+      }, {minTimeout: 100});
       let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
 
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
@@ -270,11 +272,7 @@ app.use(express.static("../client/web"));
 
 // Can only reach this route in dev machine.
 // On production server, nginx does the proxying.
-app.use('/db', proxy("localhost:5984", {
-  async userResHeaderDecorator(headers) {
-    return headers;
-  }
-}));
+app.use('/db', proxy("localhost:5984"));
 
 
 
