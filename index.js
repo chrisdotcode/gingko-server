@@ -116,6 +116,7 @@ app.post('/forgot-password', async (req, res) => {
       }
 
       await sgMail.send(msg);
+      res.status(200).send({email: email})
     }
   } catch (err) {
     console.log(err)
