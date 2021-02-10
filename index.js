@@ -74,19 +74,13 @@ app.post('/login', async (req, res) => {
     if (loginRes.status == 200) {
       let userDb = nano.use(userDbName);
       let settings = await userDb.get('settings').catch(e => null);
-      let docListRes = await promiseRetry((retry, attempt) => {
-        return userDb.view('testDocList', 'docList').catch(retry);
-      }, {minTimeout: 100});
+      let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
       let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
 
       res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
     }
   } catch (err) {
-    if (err.error === 'not_found') {
-      res.status(404).send(err);
-    } else {
-      res.status(err.response.status).send(err.response.data);
-    }
+    res.status(err.response.status).send(err.response.data);
   }
 });
 
