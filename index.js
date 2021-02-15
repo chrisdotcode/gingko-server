@@ -31,12 +31,14 @@ sgMail.setApiKey(config.SENDGRID_API_KEY);
 app.post('/signup', async (req, res) => {
   let email = req.body.email;
   let userDbName = `userdb-${toHex(email)}`;
+  let timestamp = Date.now();
 
   const dbRes = await usersDB.insert(
     { type: "user"
     , roles: []
     , name: email
     , password: req.body.password
+    , created_at: timestamp
     }, `org.couchdb.user:${email}`).catch(async e => e);
 
   if (dbRes.ok) {
@@ -49,7 +51,11 @@ app.post('/signup', async (req, res) => {
       return nano.use(userDbName).insert(designDocList).catch(retry);
     }, {minTimeout: 100});
 
-    let data = {email: email, db: userDbName};
+    let settings = defaultSettings(email, "en", timestamp, 14);
+    let settingsRes = await nano.use(userDbName).insert(settings);
+    settings["rev"] = settingsRes.rev;
+
+    let data = {email: email, db: userDbName, settings: settings};
 
     res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
   } else if (dbRes.error == "conflict"){
@@ -216,14 +222,17 @@ app.post('/hooks', async (req, res) => {
       let userDb = nano.use(userDbName);
 
       // Update user's settings
-      let settings = await userDb.get('settings').catch(e => null);
-      settings.customer = custId;
+      let settings = {};
+      try {
+        settings = await userDb.get('settings');
+      } catch (err) {
+        if (err.error === "not_found") {
+          settings = defaultSettings(email, "en", Date.now(), 14);
+        }
+        console.log(err)
+      }
+      settings.paymentStatus = { customer: custId };
       let dbSaveRes = await userDb.insert(settings);
-      break;
-    case 'payment_method.attached':
-      const paymentMethod = event.data.object;
-      // Then define and call a method to handle the successful attachment of a PaymentMethod.
-      // handlePaymentMethodAttached(paymentMethod);
       break;
     // ... handle other event types
     default:
@@ -301,6 +310,12 @@ designDocList =
     },
     "language": "javascript"
   };
+
+
+function defaultSettings(email, language = "en", trialStart, trialLength) {
+  let trialExpires = trialStart + trialLength*24*3600*1000;
+  return {_id: "settings", email, language, paymentStatus: {trialExpires}};
+}
 
 
 function toHex(s) {
