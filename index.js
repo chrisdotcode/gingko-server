@@ -29,7 +29,7 @@ sgMail.setApiKey(config.SENDGRID_API_KEY);
 /* ==== Authentication ==== */
 
 app.post('/signup', async (req, res) => {
-  let email = req.body.email;
+  let email = req.body.email.toLowerCase();
   let userDbName = `userdb-${toHex(email)}`;
   let timestamp = Date.now();
 
@@ -67,7 +67,7 @@ app.post('/signup', async (req, res) => {
 
 
 app.post('/login', async (req, res) => {
-  let email = req.body.email;
+  let email = req.body.email.toLowerCase();
   let password = req.body.password;
   let userDbName = `userdb-${toHex(email)}`;
 
