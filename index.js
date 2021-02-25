@@ -169,6 +169,27 @@ app.post('/reset-password', async (req, res) => {
 });
 
 
+app.post('/pleasenospam', async (req, res) => {
+  const msg = {
+    to: req.body.toEmail,
+    from: config.SUPPORT_EMAIL,
+    replyTo: req.body.fromEmail,
+    cc: req.body.fromEmail,
+    subject: req.body.subject,
+    text: req.body.body,
+    html: req.body.body,
+  }
+
+  try {
+    await sgMail.send(msg);
+    res.status(201).send();
+  } catch (err) {
+    console.log(err.response.body.errors)
+    res.status(err.response.status).send(err.response.data);
+  }
+});
+
+
 
 /* ==== Payment ==== */
 
