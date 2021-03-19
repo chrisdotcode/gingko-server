@@ -126,6 +126,7 @@ app.post('/forgot-password', async (req, res) => {
     }
   } catch (err) {
     console.log(err)
+    res.send(err.statusCode).send();
   }
 });
 
