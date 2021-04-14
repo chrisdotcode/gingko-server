@@ -125,8 +125,7 @@ app.post('/forgot-password', async (req, res) => {
       res.status(200).send({email: email})
     }
   } catch (err) {
-    console.log(err)
-    res.send(err.statusCode).send();
+    res.status(err.statusCode).send();
   }
 });
 
@@ -298,7 +297,12 @@ app.use(express.static("../client/web"));
 
 // Can only reach this route in dev machine.
 // On production server, nginx does the proxying.
-app.use('/db', proxy("localhost:5984"));
+app.use('/db', proxy("localhost:5984", {
+  async userResHeaderDecorator(headers, userReq, userRes, proxyReq, proxyRes) {
+    //await new Promise(r => setTimeout(r, Math.random()*2500));
+    return headers;
+  }
+}));
 
 
 
