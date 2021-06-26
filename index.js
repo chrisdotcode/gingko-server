@@ -228,6 +228,17 @@ app.post('/create-checkout-session', async (req, res) => {
 });
 
 
+app.post('/create-portal-session', async (req, res) => {
+  const { customer_id } = req.body;
+
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customer_id
+  });
+
+  res.redirect(session.url);
+});
+
+
 app.post('/hooks', async (req, res) => {
   let event = req.body;
 
