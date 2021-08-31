@@ -181,8 +181,20 @@ app.post('/pleasenospam', async (req, res) => {
     html: req.body.body,
   }
 
+  const urgentAutoresponse = {
+    to: req.body.fromEmail,
+    from: config.SUPPORT_URGENT_EMAIL,
+    subject: config.URGENT_MESSAGE_SUBJECT,
+    html: config.URGENT_MESSAGE_BODY,
+  }
+
   try {
     await sgMail.send(msg);
+
+    if (req.body.toEmail == config.SUPPORT_URGENT_EMAIL) {
+      await sgMail.send(urgentAutoresponse);
+    }
+
     res.status(201).send();
   } catch (err) {
     console.log(err.response.body.errors)
