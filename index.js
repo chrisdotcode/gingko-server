@@ -43,6 +43,26 @@ app.post('/signup', async (req, res) => {
     }, `org.couchdb.user:${email}`).catch(async e => e);
 
   if (dbRes.ok) {
+    try {
+      const options =
+        {  url: "https://api.mailerlite.com/api/v2/groups/106198315/subscribers"
+        ,  method: 'post'
+        ,  headers: { 'Accept': 'application/json'
+                    , 'X-MailerLite-ApiDocs': 'true'
+                    , 'Content-Type': 'application/json'
+                    , 'X-MailerLite-ApiKey': config.MAILERLITE_API_KEY
+                    }
+        , data: { email: email
+                , resubscribe: true
+                , autoresponders: true
+                , type: 'unconfirmed'
+                }
+        };
+      axios(options);
+    } catch (mailErr) {
+      console.log(mailErr);
+    }
+
     let loginRes = await axios.post("http://localhost:5984/_session", {
       name: email,
       password: req.body.password

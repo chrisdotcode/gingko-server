@@ -2,6 +2,7 @@ module.exports = {
   COUCHDB_USER: "couchusername",
   COUCHDB_PASS: "couchpassword",
   SENDGRID_API_KEY: "SG.somekeyvalue",
+  MAILERLITE_API_KEY: "123123123123123",
   SUPPORT_EMAIL: "support@somedomain.com",
   SUPPORT_URGENT_EMAIL: "urgent@somedomain.com",
   URGENT_MESSAGE_SUBJECT: "Urgent message received",
