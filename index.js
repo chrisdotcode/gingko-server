@@ -309,7 +309,42 @@ app.post('/hooks', async (req, res) => {
 });
 
 
+/* ==== Mail confirmation ==== */
 
+let confirmedHandler = async (email, date) => {
+  // Posix time
+  let timestamp = Date.parse(date);
+
+  // get user settings object
+  let userDbName = `userdb-${toHex(email)}`;
+  let userDb = nano.use(userDbName);
+  let settings = await userDb.get('settings').catch(e => null);
+
+  if (settings !== null) {
+    settings.confirmedAt = timestamp;
+
+    return userDb.insert(settings);
+  }
+};
+
+app.post('/mlhooks', async (req, res) => {
+  let events = req.body.events;
+
+
+  // Handle the events
+  let subscribers = events.map(x => x.data.subscriber);
+
+  let confirmPromises = subscribers.filter(s => s.confirmation_timestamp).map(s => {
+    if (s.confirmation_timestamp) {
+      confirmedHandler(s.email, s.confirmation_timestamp);
+    }
+  });
+
+  await Promise.all(confirmPromises);
+
+  // Return a res to acknowledge receipt of the event
+  res.json({received: true});
+});
 
 /* ==== Export ==== */
 
