@@ -38,8 +38,8 @@ async function getDbIds(filterFn = () => true) {
 }
 
 
-async function modifySettingsDryRun(updateFn = (s) => s, filterFn = () => true) {
-  let userDbIds = await getDbIds(filterFn);
+async function modifySettingsDryRun(updateFn = (s) => s, userFilter = () => true, settingsFilter = () => true) {
+  let userDbIds = await getDbIds(userFilter);
   let settingsPromises =
     userDbIds
       .map(async dbId => [dbId, await nano.request({db: dbId, doc: 'settings'}).catch(e => undefined)])
@@ -47,6 +47,7 @@ async function modifySettingsDryRun(updateFn = (s) => s, filterFn = () => true) 
   let result =
     settings
       .filter(sArr => typeof sArr[1] !== "undefined")
+      .filter(settingsFilter)
       .map(sArr => { return {db: sArr[0], body: updateFn(structuredClone(sArr[1])), old_body: sArr[1]} });
   return result;
 }
