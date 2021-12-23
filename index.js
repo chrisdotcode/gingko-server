@@ -421,7 +421,7 @@ designDocList =
 
 function defaultSettings(email, language = "en", trialStart, trialLength) {
   let trialExpires = trialStart + trialLength*24*3600*1000;
-  return {_id: "settings", email, language, paymentStatus: {trialExpires}};
+  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: null};
 }
 
 
