@@ -244,6 +244,7 @@ app.post('/create-checkout-session', async (req, res) => {
           quantity: 1,
         },
       ],
+      allow_promotion_codes: true,
       customer_email: customer_email,
       success_url: config.URL_ROOT + '/upgrade/success?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: config.URL_ROOT,
