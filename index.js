@@ -31,8 +31,10 @@ sgMail.setApiKey(config.SENDGRID_API_KEY);
 
 app.post('/signup', async (req, res) => {
   let email = req.body.email.toLowerCase();
+  let didSubscribe = req.body.subscribed;
   let userDbName = `userdb-${toHex(email)}`;
   let timestamp = Date.now();
+  let confirmTime = didSubscribe ? null : timestamp;
 
   const dbRes = await usersDB.insert(
     { type: "user"
@@ -43,7 +45,7 @@ app.post('/signup', async (req, res) => {
     }, `org.couchdb.user:${email}`).catch(async e => e);
 
   if (dbRes.ok) {
-    if (email !== "cypress@testing.com") {
+    if (email !== "cypress@testing.com" && didSubscribe) {
       try {
         const options =
           {  url: "https://api.mailerlite.com/api/v2/groups/106198315/subscribers"
@@ -74,7 +76,7 @@ app.post('/signup', async (req, res) => {
       return nano.use(userDbName).insert(designDocList).catch(retry);
     }, {minTimeout: 100});
 
-    let settings = defaultSettings(email, "en", timestamp, 14);
+    let settings = defaultSettings(email, "en", timestamp, 14, confirmTime);
     let settingsRes = await nano.use(userDbName).insert(settings);
     settings["rev"] = settingsRes.rev;
 
@@ -420,9 +422,9 @@ designDocList =
   };
 
 
-function defaultSettings(email, language = "en", trialStart, trialLength) {
+function defaultSettings(email, language = "en", trialStart, trialLength, confirmedTime) {
   let trialExpires = trialStart + trialLength*24*3600*1000;
-  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: null};
+  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: (confirmedTime || null)};
 }
 
 
