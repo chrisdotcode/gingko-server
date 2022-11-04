@@ -239,7 +239,6 @@ app.post('/create-checkout-session', async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      payment_method_types: ["card"],
       line_items: [
         {
           price: priceId,
@@ -383,7 +382,7 @@ app.use(express.static("../client/web"));
 // On production server, nginx does the proxying.
 app.use('/db', proxy("localhost:5984", {
   async userResHeaderDecorator(headers, userReq, userRes, proxyReq, proxyRes) {
-    //await new Promise(r => setTimeout(r, Math.random()*2500));
+    //await new Promise(r => setTimeout(r, Math.random()*1500));
     return headers;
   }
 }));
