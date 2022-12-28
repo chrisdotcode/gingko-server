@@ -268,7 +268,15 @@ app.post('/reset-password', async (req, res) => {
 
 /* ==== DB proxy ==== */
 
-app.use('/db', proxy('http://localhost:5984', {}));
+app.use('/db', proxy('http://localhost:5984', {
+  proxyReqOptDecorator: function(proxyReqOpts, srcReq) {
+    if (srcReq.session.user) {
+      proxyReqOpts.headers['X-Auth-CouchDB-UserName'] = srcReq.session.user;
+      proxyReqOpts.headers['X-Auth-CouchDB-Roles'] = '';
+    }
+    return proxyReqOpts;
+  }
+}));
 
 
 /* ==== Contact Us Route ==== */

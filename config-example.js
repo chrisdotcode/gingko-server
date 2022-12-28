@@ -1,6 +1,7 @@
 module.exports = {
   COUCHDB_USER: "couchusername",
   COUCHDB_PASS: "couchpassword",
+  COUCHDB_SECRET: "couchsecret",
   SESSION_SECRET: "somesecret",
   SENDGRID_API_KEY: "SG.somekeyvalue",
   MAILERLITE_API_KEY: "123123123123123",
