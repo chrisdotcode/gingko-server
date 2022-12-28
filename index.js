@@ -72,62 +72,65 @@ app.post('/signup', async (req, res) => {
   let timestamp = Date.now();
   let confirmTime = didSubscribe ? null : timestamp;
 
-  const dbRes = await usersDB.insert(
-    { type: "user"
-    , roles: []
-    , name: email
-    , password: req.body.password
-    , created_at: timestamp
-    }, `org.couchdb.user:${email}`).catch(async e => e);
-
   const salt = crypto.randomBytes(16).toString('hex');
   let hash = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest).toString(encoding);
-  console.log(salt, password, hash);
-  userSignup.run(email, salt, hash, timestamp);
+  try {
+    userSignup.run(email, salt, hash, timestamp);
 
-  if (dbRes.ok) {
     if (email !== "cypress@testing.com" && didSubscribe) {
       try {
         const options =
-          {  url: "https://api.mailerlite.com/api/v2/groups/106198315/subscribers"
-          ,  method: 'post'
-          ,  headers: { 'Accept': 'application/json'
-                      , 'X-MailerLite-ApiDocs': 'true'
-                      , 'Content-Type': 'application/json'
-                      , 'X-MailerLite-ApiKey': config.MAILERLITE_API_KEY
-                      }
-          , data: { email: email
-                  , resubscribe: true
-                  , autoresponders: true
-                  , type: 'unconfirmed'
-                  }
-          };
+            {
+              url: "https://api.mailerlite.com/api/v2/groups/106198315/subscribers"
+              , method: 'post'
+              , headers: {
+                'Accept': 'application/json'
+                , 'X-MailerLite-ApiDocs': 'true'
+                , 'Content-Type': 'application/json'
+                , 'X-MailerLite-ApiKey': config.MAILERLITE_API_KEY
+              }
+              , data: {
+                email: email
+                , resubscribe: true
+                , autoresponders: true
+                , type: 'unconfirmed'
+              }
+            };
         axios(options);
       } catch (mailErr) {
         console.log(mailErr);
       }
     }
 
-    let loginRes = await axios.post("http://localhost:5984/_session", {
-      name: email,
-      password: req.body.password
+    req.session.regenerate((err) => {
+      if(err) { console.log(err); }
+
+      req.session.user = email;
+
+      req.session.save(async (err) => {
+        if(err) { console.log(err); }
+
+        await nano.db.create(userDbName);
+        const userDb = nano.use(userDbName);
+
+        await promiseRetry((retry, attempt) => {
+          return userDb.insert(designDocList).catch(retry);
+        }, {minTimeout: 100});
+
+        let settings = defaultSettings(email, "en", timestamp, 14, confirmTime);
+        let settingsRes = await userDb.insert(settings);
+        settings["rev"] = settingsRes.rev;
+
+        await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
+
+        let data = {email: email, db: userDbName, settings: settings};
+
+        res.status(200).send(data);
+      })
     })
-
-    await promiseRetry((retry, attempt) => {
-      return nano.use(userDbName).insert(designDocList).catch(retry);
-    }, {minTimeout: 100});
-
-    let settings = defaultSettings(email, "en", timestamp, 14, confirmTime);
-    let settingsRes = await nano.use(userDbName).insert(settings);
-    settings["rev"] = settingsRes.rev;
-
-    let data = {email: email, db: userDbName, settings: settings};
-
-    res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
-  } else if (dbRes.error == "conflict"){
-    res.status(409).send();
-  } else {
-    res.status(500).send();
+  } catch (e) {
+    console.log(e);
+    return res
   }
 });
 
@@ -142,7 +145,6 @@ app.post('/login', async (req, res) => {
   // Check SQLite DB for user and password
   let user = userByEmail.get(email);
   if (user !== undefined) {
-    console.log("SQLite3 user found", user);
     crypto.pbkdf2(password, user.salt, iterations, keylen, digest, (err, derivedKey) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
