@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const sgMail = require('@sendgrid/mail');
 const proxy = require('express-http-proxy');
+const session = require('express-session');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
@@ -15,6 +16,7 @@ const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
 
 /* ==== SQLite3 ==== */
+
 const Database = require('better-sqlite3');
 const db = new Database('data.db');
 db.pragma('journal_mode = WAL');
@@ -32,6 +34,27 @@ app.use(express.urlencoded({ extended: true }));
 
 sgMail.setApiKey(config.SENDGRID_API_KEY);
 
+// Session
+
+const createClient = require("redis").createClient;
+const RedisStore = require('connect-redis')(session);
+const redis = createClient({legacyMode: true});
+redis.connect().catch(console.error);
+
+redis.on("error", function (err) {
+  console.log("Redis Error " + err);
+});
+redis.on("connect", function () {
+  console.log("Redis connected");
+});
+app.use(session({
+    store: new RedisStore({ client: redis }),
+    secret: config.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, maxAge: /* 14 days */ 1209600000 }
+}));
+
 
 /* ==== Authentication ==== */
 
@@ -40,6 +63,11 @@ const keylen = 20;
 const size = 16;
 const encoding = 'hex';
 const digest = 'SHA1';
+
+function isAuthenticated (req, res, next) {
+  if (req.session.user) next()
+  else next('route')
+}
 
 app.post('/signup', async (req, res) => {
   let email = req.body.email.toLowerCase();
@@ -106,6 +134,8 @@ app.post('/signup', async (req, res) => {
 app.post('/login', async (req, res) => {
   let email = req.body.email.toLowerCase();
   let password = req.body.password;
+  session.username = email;
+  session.password = password;
   let userDbName = `userdb-${toHex(email)}`;
 
   // Check SQLite DB for user and password
@@ -116,6 +146,18 @@ app.post('/login', async (req, res) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
           console.log("SQLite3 login");
+          req.session.regenerate(function(err) {
+            if(err) { console.log(err); }
+
+            req.session.user = email;
+
+            req.session.save((err) => {
+                if(err) { console.log(err); }
+
+                console.log('new session created', req.session);
+                res.status(200).send({email: email, db: userDbName});
+            })
+          });
         } else {
           console.log("SQLite3 password incorrect", err);
         }
