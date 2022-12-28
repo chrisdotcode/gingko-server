@@ -11,9 +11,15 @@ const proxy = require('express-http-proxy');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
-const sessionDB = nano.use("_session");
 const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
+
+/* ==== SQLite3 ==== */
+const Database = require('better-sqlite3');
+const db = new Database('data.db');
+db.pragma('journal_mode = WAL');
+db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
+const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 
 
 /* ==== SETUP ==== */
@@ -28,6 +34,12 @@ sgMail.setApiKey(config.SENDGRID_API_KEY);
 
 
 /* ==== Authentication ==== */
+
+const iterations = 10;
+const keylen = 20;
+const size = 16;
+const encoding = 'hex';
+const digest = 'SHA1';
 
 app.post('/signup', async (req, res) => {
   let email = req.body.email.toLowerCase();
@@ -96,6 +108,21 @@ app.post('/login', async (req, res) => {
   let password = req.body.password;
   let userDbName = `userdb-${toHex(email)}`;
 
+  // Check SQLite DB for user and password
+  let user = userByEmail.get(email);
+  if (user !== undefined) {
+    console.log("SQLite3 user found", user);
+    crypto.pbkdf2(password, user.salt, iterations, keylen, digest, (err, derivedKey) => {
+        if (err) throw err;
+        if (derivedKey.toString(encoding) === user.password) {
+          console.log("SQLite3 login");
+        } else {
+          console.log("SQLite3 password incorrect", err);
+        }
+    });
+  }
+
+  /*
   try {
     let loginRes = await axios.post("http://localhost:5984/_session" ,
       { name: email,
@@ -113,6 +140,8 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     res.status(err.response.status).send(err.response.data);
   }
+
+   */
 });
 
 
@@ -193,6 +222,14 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
+
+
+/* ==== DB proxy ==== */
+
+app.use('/db', proxy('http://localhost:5984', {}));
+
+
+/* ==== Contact Us Route ==== */
 
 app.post('/pleasenospam', async (req, res) => {
   const msg = {
@@ -374,18 +411,6 @@ app.post('/export-docx', async (req, res) => {
 app.use(express.static("../client/web"));
 
 
-
-
-/* ==== Dev db proxy ==== */
-
-// Can only reach this route in dev machine.
-// On production server, nginx does the proxying.
-app.use('/db', proxy("localhost:5984", {
-  async userResHeaderDecorator(headers, userReq, userRes, proxyReq, proxyRes) {
-    //await new Promise(r => setTimeout(r, Math.random()*1500));
-    return headers;
-  }
-}));
 
 
 
