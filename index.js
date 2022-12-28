@@ -60,14 +60,8 @@ app.use(session({
 
 const iterations = 10;
 const keylen = 20;
-const size = 16;
 const encoding = 'hex';
 const digest = 'SHA1';
-
-function isAuthenticated (req, res, next) {
-  if (req.session.user) next()
-  else next('route')
-}
 
 app.post('/signup', async (req, res) => {
   let email = req.body.email.toLowerCase();
@@ -145,45 +139,28 @@ app.post('/login', async (req, res) => {
     crypto.pbkdf2(password, user.salt, iterations, keylen, digest, (err, derivedKey) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
-          console.log("SQLite3 login");
+          // Authentication successful
           req.session.regenerate(function(err) {
             if(err) { console.log(err); }
 
             req.session.user = email;
 
-            req.session.save((err) => {
-                if(err) { console.log(err); }
+            req.session.save(async (err) => {
+              if(err) { console.log(err); }
 
-                console.log('new session created', req.session);
-                res.status(200).send({email: email, db: userDbName});
+              let userDb = nano.use(userDbName);
+              let settings = await userDb.get('settings').catch(e => {console.error(e); return null});
+              let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
+              let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
+
+              res.status(200).send(data);
             })
           });
         } else {
-          console.log("SQLite3 password incorrect", err);
+          res.status(401).send();
         }
     });
   }
-
-  /*
-  try {
-    let loginRes = await axios.post("http://localhost:5984/_session" ,
-      { name: email,
-        password: password,
-      });
-
-    if (loginRes.status == 200) {
-      let userDb = nano.use(userDbName);
-      let settings = await userDb.get('settings').catch(e => null);
-      let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
-      let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
-
-      res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
-    }
-  } catch (err) {
-    res.status(err.response.status).send(err.response.data);
-  }
-
-   */
 });
 
 
