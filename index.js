@@ -22,6 +22,7 @@ const db = new Database('data.db');
 db.pragma('journal_mode = WAL');
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
+const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
 
 
 /* ==== SETUP ==== */
@@ -64,7 +65,8 @@ const encoding = 'hex';
 const digest = 'SHA1';
 
 app.post('/signup', async (req, res) => {
-  let email = req.body.email.toLowerCase();
+  const email = req.body.email.toLowerCase();
+  const password = req.body.password;
   let didSubscribe = req.body.subscribed;
   let userDbName = `userdb-${toHex(email)}`;
   let timestamp = Date.now();
@@ -77,6 +79,11 @@ app.post('/signup', async (req, res) => {
     , password: req.body.password
     , created_at: timestamp
     }, `org.couchdb.user:${email}`).catch(async e => e);
+
+  const salt = crypto.randomBytes(16).toString('hex');
+  let hash = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest).toString(encoding);
+  console.log(salt, password, hash);
+  userSignup.run(email, salt, hash, timestamp);
 
   if (dbRes.ok) {
     if (email !== "cypress@testing.com" && didSubscribe) {
