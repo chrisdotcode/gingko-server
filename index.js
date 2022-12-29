@@ -31,6 +31,12 @@ const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt)
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ? AND deletedAt IS NULL');
+const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+const upsertMany = db.transaction((trees) => {
+    for (const tree of trees) {
+        treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.collaborators, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
+    }
+});
 
 
 /* ==== SETUP ==== */
@@ -75,7 +81,17 @@ const wss = new ws.WebSocketServer({noServer: true});
 
 wss.on('connection', (ws, req) => {
   ws.on('message', function incoming(message) {
-    console.log('received: %s', message);
+    const msg = JSON.parse(message);
+    switch (msg.t) {
+      case "trees":
+        try {
+          upsertMany(msg.d);
+          ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
+        } catch (e) {
+          console.error(e);
+        }
+        break;
+    }
   });
 
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(req.session.user)}));
