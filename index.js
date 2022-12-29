@@ -78,8 +78,14 @@ app.use(session({
 /* ==== WebSocket ==== */
 
 const wss = new ws.WebSocketServer({noServer: true});
+const wsToUser = new Map();
 
 wss.on('connection', (ws, req) => {
+  const userId = req.session.user;
+  wsToUser.set(ws, userId);
+
+  ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+
   ws.on('message', function incoming(message) {
     const msg = JSON.parse(message);
     try {
@@ -87,6 +93,12 @@ wss.on('connection', (ws, req) => {
         case "trees":
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
+          const usersToNotify = msg.d.map(tree => tree.owner);
+          for (const [otherWs, userId] of wsToUser) {
+            if (usersToNotify.includes(userId) && otherWs !== ws) {
+              otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+            }
+          }
           break;
       }
     } catch (e) {
@@ -94,7 +106,9 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(req.session.user)}));
+  ws.on('close', () => {
+    wsToUser.delete(ws);
+  });
 });
 
 server.on('upgrade', async (request, socket, head) => {
