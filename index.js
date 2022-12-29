@@ -9,20 +9,27 @@ const axios = require('axios');
 const sgMail = require('@sendgrid/mail');
 const proxy = require('express-http-proxy');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const usersDB = nano.use("_users");
 const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
+const ws = require('ws');
 
 /* ==== SQLite3 ==== */
 
 const Database = require('better-sqlite3');
 const db = new Database('data.db');
 db.pragma('journal_mode = WAL');
+
+// Users Table
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
+
+// Trees Table
+db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 
 
 /* ==== SETUP ==== */
@@ -34,6 +41,11 @@ app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({ extended: true }));
 
 sgMail.setApiKey(config.SENDGRID_API_KEY);
+
+
+/* ==== Start Server ==== */
+
+const server = app.listen(port, () => console.log(`Example app listening at https://localhost:${port}`));
 
 // Session
 
@@ -55,6 +67,46 @@ app.use(session({
     saveUninitialized: true,
     cookie: { secure: false, maxAge: /* 14 days */ 1209600000 }
 }));
+
+/* ==== WebSocket ==== */
+
+const wss = new ws.WebSocketServer({noServer: true});
+
+wss.on('connection', (ws, req) => {
+  ws.on('message', function incoming(message) {
+    console.log('received: %s', message);
+  });
+
+  ws.send('something');
+});
+
+server.on('upgrade', async (request, socket, head) => {
+  const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
+  const sessionId = sessionCookie.split('=')[1];
+  const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
+  if (signedCookie === false) {
+    socket.destroy();
+    return;
+  } else {
+    const session = await new Promise((resolve, reject) => {
+      redis.get(`sess:${signedCookie}`, (err, data) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(JSON.parse(data));
+        }
+      });
+    });
+    if (session.user) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  }
+});
+
 
 
 /* ==== Authentication ==== */
@@ -457,12 +509,6 @@ app.use(express.static("../client/web"));
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../client/web/index.html'));
 });
-
-
-
-/* ==== Start Server ==== */
-
-app.listen(port, () => console.log(`Example app listening at https://localhost:${port}`));
 
 
 
