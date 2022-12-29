@@ -30,6 +30,7 @@ const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt)
 
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
+const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ? AND deletedAt IS NULL');
 
 
 /* ==== SETUP ==== */
@@ -77,7 +78,7 @@ wss.on('connection', (ws, req) => {
     console.log('received: %s', message);
   });
 
-  ws.send('something');
+  ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(req.session.user)}));
 });
 
 server.on('upgrade', async (request, socket, head) => {
@@ -99,6 +100,7 @@ server.on('upgrade', async (request, socket, head) => {
     });
     if (session.user) {
       wss.handleUpgrade(request, socket, head, (ws) => {
+        request.session = session;
         wss.emit('connection', ws, request);
       });
     } else {
