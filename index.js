@@ -82,15 +82,15 @@ const wss = new ws.WebSocketServer({noServer: true});
 wss.on('connection', (ws, req) => {
   ws.on('message', function incoming(message) {
     const msg = JSON.parse(message);
-    switch (msg.t) {
-      case "trees":
-        try {
+    try {
+      switch (msg.t) {
+        case "trees":
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
-        } catch (e) {
-          console.error(e);
-        }
-        break;
+          break;
+      }
+    } catch (e) {
+      console.error(e);
     }
   });
 
