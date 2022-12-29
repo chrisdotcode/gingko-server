@@ -30,7 +30,7 @@ const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt)
 
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
-const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ? AND deletedAt IS NULL');
+const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
