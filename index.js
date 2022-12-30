@@ -27,6 +27,7 @@ db.pragma('journal_mode = WAL');
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
+const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
@@ -521,6 +522,35 @@ app.post('/export-docx', async (req, res) => {
       fs.createReadStream(outFile).pipe(res);
     })
   });
+});
+
+
+
+/* ==== Testing ==== */
+
+app.delete('/test/user', async (req, res) => {
+  let userDbName = `userdb-${toHex("cypress@testing.com")}`;
+
+  try {
+    await nano.db.destroy(userDbName);
+    deleteTestUser.run();
+    userByEmail.run("cypress@testing.com");
+    res.status(200).send();
+  } catch (err) {
+    console.log(err);
+    res.status(500).send(err);
+  }
+});
+
+app.post('/test/trees', async (req, res) => {
+  trees = req.body;
+  try {
+    upsertMany(trees);
+    res.status(200).send();
+  } catch (err) {
+    console.log(err);
+    res.status(500).send(err);
+  }
 });
 
 
