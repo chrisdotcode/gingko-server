@@ -269,6 +269,8 @@ app.post('/logout', async (req, res) => {
       if(err) { console.log(err); }
       res.clearCookie("connect.sid").status(200).send();
     });
+  } else {
+    res.status(200).send();
   }
 });
 
