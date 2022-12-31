@@ -264,11 +264,11 @@ app.post('/login', async (req, res) => {
 
 
 app.post('/logout', async (req, res) => {
-  try {
-    let logoutRes = await axios.delete("http://localhost:5984/_session");
-    res.status(200).cookie(logoutRes.headers['set-cookie']).send();
-  } catch (err) {
-    res.send(err)
+  if (req.session.user) {
+    req.session.destroy((err) => {
+      if(err) { console.log(err); }
+      res.clearCookie("connect.sid").status(200).send();
+    });
   }
 });
 
