@@ -542,7 +542,7 @@ app.delete('/test/user', async (req, res) => {
   let userDbName = `userdb-${toHex("cypress@testing.com")}`;
 
   try {
-    await nano.db.destroy(userDbName);
+    await nano.db.destroy(userDbName).catch(e => null);
     deleteTestUser.run();
     deleteTestUserTrees.run();
     userByEmail.run("cypress@testing.com");
