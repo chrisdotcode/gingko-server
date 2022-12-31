@@ -40,6 +40,11 @@ const upsertMany = db.transaction((trees) => {
     }
 });
 
+// Reset Token Table
+db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
+const resetTokenByEmail = db.prepare('SELECT * FROM resetTokens WHERE email = ?');
+const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
+
 
 /* ==== SETUP ==== */
 
@@ -278,26 +283,24 @@ app.post('/logout', async (req, res) => {
 app.post('/forgot-password', async (req, res) => {
   let email = req.body.email;
   try {
-    let user = await usersDB.get(`org.couchdb.user:${email}`);
+    let user = userByEmail.run(email);
 
     let token = newToken();
     user.resetToken = hashToken(token);
-    user.resetExpiry = Date.now() + 3600*1000; // one hour expiry
+    user.tokenCreatedAt = Date.now();
 
-    const dbRes = await usersDB.insert(user);
+    resetTokenInsert.run(user.resetToken, email, user.tokenCreatedAt);
 
-    if (dbRes.ok) {
-      const msg = {
-        to: email,
-        from: config.SUPPORT_EMAIL,
-        subject: 'Password Reset link for Gingkowriter.com',
-        text: `The reset link: https://app.gingkowriter.com/reset-password/${token}`,
-        html: `The reset link: https://app.gingkowriter.com/reset-password/${token}`
-      }
-
-      await sgMail.send(msg);
-      res.status(200).send({email: email})
+    const msg = {
+      to: email,
+      from: config.SUPPORT_EMAIL,
+      subject: 'Password Reset link for Gingkowriter.com',
+      text: `The reset link: https://app.gingkowriter.com/reset-password/${token}`,
+      html: `The reset link: https://app.gingkowriter.com/reset-password/${token}`
     }
+
+    await sgMail.send(msg);
+    res.status(200).send({email: email})
   } catch (err) {
     res.status(err.statusCode).send();
   }
