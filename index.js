@@ -27,6 +27,7 @@ db.pragma('journal_mode = WAL');
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
+const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 
@@ -42,7 +43,7 @@ const upsertMany = db.transaction((trees) => {
 
 // Reset Token Table
 db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
-const resetTokenByEmail = db.prepare('SELECT * FROM resetTokens WHERE email = ?');
+const resetToken = db.prepare('SELECT * FROM resetTokens WHERE token = ?');
 const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
 
 
@@ -124,7 +125,6 @@ server.on('upgrade', async (request, socket, head) => {
   const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
   if (signedCookie === false) {
     socket.destroy();
-    return;
   } else {
     const session = await new Promise((resolve, reject) => {
       redis.get(`sess:${signedCookie}`, (err, data) => {
@@ -312,32 +312,18 @@ app.post('/reset-password', async (req, res) => {
   let newPassword = req.body.password;
 
   try {
-    let searchRes = await usersDB.find({"selector": {"resetToken": hashToken(token)}});
-    let user = searchRes.docs[0];
-    let email = user.name;
-    let userDbName = `userdb-${toHex(user.email)}`;
-
-    // change password and save to DB
-    user.password = newPassword;
-    delete user.resetToken;
-    delete user.resetExpiry;
-    const dbRes = await usersDB.insert(user);
-
-    if (dbRes.ok) {
-      let loginRes = await axios.post("http://localhost:5984/_session", {
-        name: email,
-        password: newPassword
-      })
-
-      if (loginRes.status == 200) {
-        let userDb = nano.use(userDbName);
-        let settings = await userDb.get('settings').catch(e => null);
-        let data = { email: email, settings: settings };
-
-        res.status(200).cookie(loginRes.headers['set-cookie']).send(data);
-      }
-    } else {
-      res.status(500).send();
+    let tokenRow = resetToken.get(hashToken(token));
+    let timeElapsed = Date.now() - tokenRow.createdAt;
+    if (timeElapsed < 3600000) {
+        let user = userByEmail.get(tokenRow.email);
+        if (user) {
+            const salt = crypto.randomBytes(16).toString('hex');
+            let hash = crypto.pbkdf2Sync(newPassword, salt, iterations, keylen, digest).toString(encoding);
+            userChangePassword.run(salt, hash, user.id);
+            res.status(200).send();
+        } else {
+            res.status(404).send();
+        }
     }
   } catch (err) {
     console.log(err)
