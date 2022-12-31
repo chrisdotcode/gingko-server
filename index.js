@@ -12,7 +12,6 @@ const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
-const usersDB = nano.use("_users");
 const promiseRetry = require("promise-retry");
 const nodePandoc = require("node-pandoc");
 const ws = require('ws');
@@ -45,6 +44,7 @@ const upsertMany = db.transaction((trees) => {
 db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
 const resetToken = db.prepare('SELECT * FROM resetTokens WHERE token = ?');
 const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
+const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 
 
 /* ==== SETUP ==== */
@@ -233,8 +233,6 @@ app.post('/signup', async (req, res) => {
 app.post('/login', async (req, res) => {
   let email = req.body.email.toLowerCase();
   let password = req.body.password;
-  session.username = email;
-  session.password = password;
   let userDbName = `userdb-${toHex(email)}`;
 
   // Check SQLite DB for user and password
@@ -244,28 +242,32 @@ app.post('/login', async (req, res) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
           // Authentication successful
-          req.session.regenerate(function(err) {
-            if(err) { console.log(err); }
-
-            req.session.user = email;
-
-            req.session.save(async (err) => {
-              if(err) { console.log(err); }
-
-              let userDb = nano.use(userDbName);
-              let settings = await userDb.get('settings').catch(e => {console.error(e); return null});
-              let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
-              let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
-
-              res.status(200).send(data);
-            })
-          });
+          doLogin(req, res, email, userDbName);
         } else {
           res.status(401).send();
         }
     });
   }
 });
+
+function doLogin(req, res, email, userDbName) {
+  req.session.regenerate(function(err) {
+    if(err) { console.log(err); }
+
+    req.session.user = email;
+
+    req.session.save(async (err) => {
+      if(err) { console.log(err); }
+
+      let userDb = nano.use(userDbName);
+      let settings = await userDb.get('settings').catch(e => {console.error(e); return null});
+      let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
+      let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
+
+      res.status(200).send(data);
+    })
+  });
+}
 
 
 app.post('/logout', async (req, res) => {
@@ -286,7 +288,7 @@ app.post('/forgot-password', async (req, res) => {
     let user = userByEmail.run(email);
 
     let token = newToken();
-    user.resetToken = hashToken(token);
+    user.resetToken = hashToken(token); // Consider not hashing token for test user, so we can check it
     user.tokenCreatedAt = Date.now();
 
     resetTokenInsert.run(user.resetToken, email, user.tokenCreatedAt);
@@ -320,11 +322,14 @@ app.post('/reset-password', async (req, res) => {
             const salt = crypto.randomBytes(16).toString('hex');
             let hash = crypto.pbkdf2Sync(newPassword, salt, iterations, keylen, digest).toString(encoding);
             userChangePassword.run(salt, hash, user.id);
-            res.status(200).send();
+            doLogin(req, res, user.id, `userdb-${toHex(user.id)}`);
         } else {
             res.status(404).send();
         }
     }
+
+    // Whether the token is expired or not, delete it from the database
+    resetTokenDelete.run(tokenRow.email);
   } catch (err) {
     console.log(err)
     res.status(err.response.status).send(err.response.data);
