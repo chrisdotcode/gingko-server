@@ -215,8 +215,12 @@ app.post('/signup', async (req, res) => {
       })
     })
   } catch (e) {
-    console.log(e);
-    return res
+    if (e.code && e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+      res.status(409).send();
+    } else {
+      console.log(e);
+      res.status(500).send({error: "Internal server error"});
+    }
   }
 });
 
