@@ -1,11 +1,10 @@
 const express = require('express');
 const fs = require('fs')
 const path = require('path');
-const process = require('process');
 const URLSafeBase64 = require('urlsafe-base64');
 const uuid = require('uuid');
-const crypto = require('crypto');
 const axios = require('axios');
+const hlc = require('@tpp/hybrid-logical-clock');
 const sgMail = require('@sendgrid/mail');
 const proxy = require('express-http-proxy');
 const session = require('express-session');
@@ -50,6 +49,12 @@ const upsertMany = db.transaction((trees) => {
 db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt INTEGER, deleted BOOLEAN)');
 const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
 const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
+const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
+const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (id, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?)');
+const cardUpdate = db.prepare('UPDATE cards SET content = ? WHERE id = ?');
+const cardDelete = db.prepare('UPDATE cards SET deleted = TRUE WHERE id = ?');
+const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
+const setUpdatedAt = db.prepare('UPDATE cards SET updatedAt = ? WHERE id = ?');
 
 
 /* ==== SETUP ==== */
@@ -101,8 +106,20 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', function incoming(message) {
     const msg = JSON.parse(message);
+    console.log(msg);
     try {
       switch (msg.t) {
+        case "trees":
+          upsertMany(msg.d);
+          ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
+          const usersToNotify = msg.d.map(tree => tree.owner);
+          for (const [otherWs, userId] of wsToUser) {
+            if (usersToNotify.includes(userId) && otherWs !== ws) {
+              otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+            }
+          }
+          break;
+
         case 'pull':
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
@@ -114,14 +131,36 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
-        case "trees":
-          upsertMany(msg.d);
-          ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
-          const usersToNotify = msg.d.map(tree => tree.owner);
-          for (const [otherWs, userId] of wsToUser) {
-            if (usersToNotify.includes(userId) && otherWs !== ws) {
-              otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+        case 'push':
+          let conflictExists = false;
+          const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
+
+          // Note : If I'm not generating any hybrid logical clock values,
+          // then having this here is likely pointless.
+          hlc.recv(lastTs);
+
+          const deltasTx = db.transaction(() => {
+            for (let delta of msg.d.dlts) {
+              runDelta(delta)
             }
+          });
+          try {
+            deltasTx();
+          } catch (e) {
+            conflictExists = true;
+            console.log(e.message);
+          }
+
+          if (conflictExists) {
+            const cards = cardsSince.all(msg.d.chk);
+            ws.send(JSON.stringify({t: 'cards', d: cards}));
+          } else {
+            ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
+            wss.clients.forEach(function each(client) {
+              if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({t: 'doPull'}));
+              }
+            })
           }
           break;
       }
@@ -591,6 +630,100 @@ app.get('*', (req, res) => {
 });
 
 
+function runDelta(delta) {
+  const ts = delta.ts;
+
+  for (let op of delta.ops) {
+    switch (op.t) {
+      case 'i':
+        runIns(delta.id, op);
+        break;
+
+      case 'u':
+        runUpd(delta.id, op);
+        break;
+
+      case 'm':
+        runMov(delta.id, op);
+        break;
+
+      case 'd':
+        runDel(delta.id, op);
+        break;
+
+      case 'ud':
+        runUndel(delta.id);
+        break;
+    }
+  }
+  setUpdatedAt.run(ts, delta.id);
+}
+
+function runIns(id, ins )  {
+  const parentPresent = ins.p == null || cardById.get(ins.p);
+  if (parentPresent) {
+    cardInsert.run(id, ins.c, ins.p, ins.pos, 0);
+  } else {
+    throw new Error('Ins Conflict : Parent not present');
+  }
+}
+
+function runUpd(id, upd )  {
+  const card = cardById.get(id);
+  if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
+    cardUpdate.run(upd.c, id);
+  } else if (card == null) {
+    throw new Error(`Upd Conflict : Card '${id}' not present.`);
+  } else if (card.updatedAt != upd.e) {
+    throw new Error(`Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`);
+  } else {
+    throw new Error(`Upd Conflict : Card '${id}' unknown error`);
+  }
+}
+
+function runMov(id, mov )  {
+  const parentPresent = mov.p == null || cardById.get(mov.p) != null;
+  const card = cardById.get(id);
+  if(card != null && parentPresent && !isAncestor(id, mov.p)) {
+    cardInsert.run(id, card.content, mov.p, mov.pos, 0);
+  } else {
+    throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
+  }
+}
+
+function runDel(id, del )  {
+  const card = cardById.get(id);
+  if (card != null && card.updatedAt == del.e) {
+    cardDelete.run(id);
+  } else if (card == null) {
+    throw new Error(`Del Conflict : Card '${id}' not present`);
+  } else if (card.updatedAt != del.e) {
+    throw new Error(`Del Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${del.e}`);
+  } else {
+    throw new Error(`Del Conflict : Card '${id}' unknown error`);
+  }
+}
+
+function runUndel(id)  {
+  const info = cardUndelete.run(id);
+  if (info.changes == 0) {
+    throw new Error('Undel Conflict : Card not present');
+  }
+}
+
+// --- Helpers ---
+
+
+function isAncestor(cardId , parentId ) {
+  let card = cardById.get(cardId);
+  if (card.parentId == null) {
+    return false;
+  } else if (card.parentId == parentId) {
+    return true;
+  } else {
+    return isAncestor(card.parentId, parentId);
+  }
+}
 
 
 /* === HELPERS === */

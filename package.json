@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "@sendgrid/mail": "^7.4.0",
+    "@tpp/hybrid-logical-clock": "^1.0.0",
     "axios": "^1.2.1",
     "better-sqlite3": "^8.0.1",
     "connect-redis": "^6.1.3",
