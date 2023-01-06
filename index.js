@@ -30,6 +30,12 @@ const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? W
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 
+// Reset Token Table
+db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
+const resetToken = db.prepare('SELECT * FROM resetTokens WHERE token = ?');
+const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
+const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
+
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
@@ -40,11 +46,10 @@ const upsertMany = db.transaction((trees) => {
     }
 });
 
-// Reset Token Table
-db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
-const resetToken = db.prepare('SELECT * FROM resetTokens WHERE token = ?');
-const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
-const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
+// Cards Table
+db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt INTEGER, deleted BOOLEAN)');
+const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
+const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
 
 
 /* ==== SETUP ==== */
@@ -98,6 +103,17 @@ wss.on('connection', (ws, req) => {
     const msg = JSON.parse(message);
     try {
       switch (msg.t) {
+        case 'pull':
+          if (msg.d[1] == '0') {
+            const cards = cardsAllUndeleted.all(msg.d[0]);
+            console.log('cards', cards, msg);
+            ws.send(JSON.stringify({t: 'cards', d: cards}));
+          } else {
+            const cards = cardsSince.all(msg.d[0], msg.d[1]);
+            ws.send(JSON.stringify({t: 'cards', d: cards}));
+          }
+          break;
+
         case "trees":
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
