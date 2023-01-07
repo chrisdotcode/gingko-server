@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs')
 const path = require('path');
+const crypto = require('node:crypto');
 const URLSafeBase64 = require('urlsafe-base64');
 const uuid = require('uuid');
 const axios = require('axios');
@@ -50,7 +51,7 @@ db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, con
 const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
 const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
-const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (id, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?)');
+const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (id, treeId, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?, ?)');
 const cardUpdate = db.prepare('UPDATE cards SET content = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
@@ -662,7 +663,7 @@ function runDelta(delta) {
 function runIns(id, ins )  {
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
-    cardInsert.run(id, ins.c, ins.p, ins.pos, 0);
+    cardInsert.run(id, ins.tr, ins.c, ins.p, ins.pos, 0);
   } else {
     throw new Error('Ins Conflict : Parent not present');
   }
