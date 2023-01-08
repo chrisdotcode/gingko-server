@@ -149,19 +149,21 @@ wss.on('connection', (ws, req) => {
 
           const deltasTx = db.transaction(() => {
             for (let delta of msg.d.dlts) {
-              runDelta(delta)
+              runDelta(delta, userId)
             }
           });
           try {
             deltasTx();
           } catch (e) {
-            conflictExists = true;
+            conflictExists = true; // TODO : Check if this is the right error
             console.log(e.message);
           }
 
           if (conflictExists) {
+            /*
             const cards = cardsSince.all(msg.d.chk);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
+             */
           } else {
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
             wss.clients.forEach(function each(client) {
@@ -639,13 +641,15 @@ app.get('*', (req, res) => {
 });
 
 
-function runDelta(delta) {
+/* ==== Delta Handlers ==== */
+
+function runDelta(delta, userId) {
   const ts = delta.ts;
 
   for (let op of delta.ops) {
     switch (op.t) {
       case 'i':
-        runIns(delta.id, op);
+        runIns(userId, delta.id, op);
         break;
 
       case 'u':
@@ -668,7 +672,14 @@ function runDelta(delta) {
   setUpdatedAt.run(ts, delta.id);
 }
 
-function runIns(id, ins )  {
+function runIns(userId, id, ins )  {
+  // To prevent insertion of cards to trees the user shouldn't have access to
+  let userTrees = treesByOwner.all(userId);
+  console.log(userTrees);
+  if (!userTrees.map(t => t.id).includes(ins.tr)) {
+    throw new Error(`User ${userId} doesn't have access to tree ${ins.tr}`);
+  }
+
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
     cardInsert.run(id, ins.tr, ins.c, ins.p, ins.pos, 0);
