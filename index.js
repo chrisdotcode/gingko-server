@@ -53,6 +53,7 @@ const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND d
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
 const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (id, treeId, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?, ?)');
 const cardUpdate = db.prepare('UPDATE cards SET content = ? WHERE id = ?');
+const cardMove = db.prepare('UPDATE cards SET parentId = ?, position = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
 const setUpdatedAt = db.prepare('UPDATE cards SET updatedAt = ? WHERE id = ?');
@@ -685,8 +686,8 @@ function runUpd(id, upd )  {
 function runMov(id, mov )  {
   const parentPresent = mov.p == null || cardById.get(mov.p) != null;
   const card = cardById.get(id);
-  if(card != null && parentPresent && !isAncestor(id, mov.p)) {
-    cardInsert.run(id, card.content, mov.p, mov.pos, 0);
+  if(card != null && parentPresent && !isAncestor(mov.p, id)) {
+    cardMove.run(mov.p, mov.pos, id);
   } else {
     throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
   }
