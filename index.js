@@ -675,7 +675,6 @@ function runDelta(delta, userId) {
 function runIns(userId, id, ins )  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let userTrees = treesByOwner.all(userId);
-  console.log(userTrees);
   if (!userTrees.map(t => t.id).includes(ins.tr)) {
     throw new Error(`User ${userId} doesn't have access to tree ${ins.tr}`);
   }
