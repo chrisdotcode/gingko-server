@@ -106,9 +106,9 @@ wss.on('connection', (ws, req) => {
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
 
   ws.on('message', function incoming(message) {
-    const msg = JSON.parse(message);
-    console.log(msg);
     try {
+      const msg = JSON.parse(message);
+      console.log(msg);
       switch (msg.t) {
         case "trees":
           upsertMany(msg.d);
