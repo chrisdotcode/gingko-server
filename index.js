@@ -104,14 +104,16 @@ wss.on('connection', (ws, req) => {
   const userId = req.session.user;
   wsToUser.set(ws, userId);
 
+  console.time("trees load");
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+  console.timeEnd("trees load");
 
   ws.on('message', function incoming(message) {
     try {
       const msg = JSON.parse(message);
-      console.log(msg.t);
       switch (msg.t) {
         case "trees":
+          console.time("trees");
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
           const usersToNotify = msg.d.map(tree => tree.owner);
@@ -120,9 +122,11 @@ wss.on('connection', (ws, req) => {
               otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
             }
           }
+          console.timeEnd("trees");
           break;
 
         case 'pull':
+          console.time('pull');
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
             console.log('cards', cards, msg);
@@ -131,6 +135,7 @@ wss.on('connection', (ws, req) => {
             const cards = cardsSince.all(msg.d[0], msg.d[1]);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           }
+          console.timeEnd('pull');
           break;
 
         case 'push':
