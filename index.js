@@ -47,16 +47,15 @@ const upsertMany = db.transaction((trees) => {
 });
 
 // Cards Table
-db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt INTEGER, deleted BOOLEAN)');
+db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
 const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
 const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
-const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (id, treeId, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?, ?)');
-const cardUpdate = db.prepare('UPDATE cards SET content = ? WHERE id = ?');
-const cardMove = db.prepare('UPDATE cards SET parentId = ?, position = ? WHERE id = ?');
-const cardDelete = db.prepare('UPDATE cards SET deleted = TRUE WHERE id = ?');
-const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
-const setUpdatedAt = db.prepare('UPDATE cards SET updatedAt = ? WHERE id = ?');
+const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (updatedAt, id, treeId, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?, ?, ?)');
+const cardUpdate = db.prepare('UPDATE cards SET updatedAt = ?, content = ? WHERE id = ?');
+const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, position = ? WHERE id = ?');
+const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
+const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE WHERE id = ?');
 
 
 /* ==== SETUP ==== */
@@ -186,6 +185,7 @@ wss.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', async (request, socket, head) => {
+  console.log('ws connection requested');
   const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
   const sessionId = sessionCookie.split('=')[1];
   const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
@@ -204,6 +204,7 @@ server.on('upgrade', async (request, socket, head) => {
     if (session.user) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         request.session = session;
+        console.log('ws connection accepted');
         wss.emit('connection', ws, request);
       });
     } else {
@@ -649,30 +650,29 @@ function runDelta(delta, userId) {
   for (let op of delta.ops) {
     switch (op.t) {
       case 'i':
-        runIns(userId, delta.id, op);
+        runIns(ts, userId, delta.id, op);
         break;
 
       case 'u':
-        runUpd(delta.id, op);
+        runUpd(ts, delta.id, op);
         break;
 
       case 'm':
-        runMov(delta.id, op);
+        runMov(ts, delta.id, op);
         break;
 
       case 'd':
-        runDel(delta.id, op);
+        runDel(ts, delta.id, op);
         break;
 
       case 'ud':
-        runUndel(delta.id);
+        runUndel(ts, delta.id);
         break;
     }
   }
-  setUpdatedAt.run(ts, delta.id);
 }
 
-function runIns(userId, id, ins )  {
+function runIns(ts, userId, id, ins )  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let userTrees = treesByOwner.all(userId);
   if (!userTrees.map(t => t.id).includes(ins.tr)) {
@@ -681,17 +681,17 @@ function runIns(userId, id, ins )  {
 
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
-    cardInsert.run(id, ins.tr, ins.c, ins.p, ins.pos, 0);
+    cardInsert.run(ts, id, ins.tr, ins.c, ins.p, ins.pos, 0);
     console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
   } else {
     throw new Error('Ins Conflict : Parent not present');
   }
 }
 
-function runUpd(id, upd )  {
+function runUpd(ts, id, upd )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
-    cardUpdate.run(upd.c, id);
+    cardUpdate.run(ts, upd.c, id);
     console.log('Updated card ', id, ' to ', JSON.stringify(upd.c));
   } else if (card == null) {
     throw new Error(`Upd Conflict : Card '${id}' not present.`);
@@ -702,21 +702,21 @@ function runUpd(id, upd )  {
   }
 }
 
-function runMov(id, mov )  {
+function runMov(ts, id, mov )  {
   const parentPresent = mov.p == null || cardById.get(mov.p) != null;
   const card = cardById.get(id);
   if(card != null && parentPresent && !isAncestor(id, mov.p)) {
-    cardMove.run(mov.p, mov.pos, id);
+    cardMove.run(ts, mov.p, mov.pos, id);
     console.log('Moved card ', id, ' to ', mov.p, ' at ', mov.pos);
   } else {
     throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
   }
 }
 
-function runDel(id, del )  {
+function runDel(ts, id, del )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == del.e) {
-    cardDelete.run(id);
+    cardDelete.run(ts, id);
     console.log('Deleted card ' + id);
   } else if (card == null) {
     throw new Error(`Del Conflict : Card '${id}' not present`);
@@ -727,8 +727,8 @@ function runDel(id, del )  {
   }
 }
 
-function runUndel(id)  {
-  const info = cardUndelete.run(id);
+function runUndel(ts, id)  {
+  const info = cardUndelete.run(ts, id);
   if (info.changes == 0) {
     throw new Error('Undel Conflict : Card not present');
   }
