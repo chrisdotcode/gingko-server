@@ -13,6 +13,7 @@ const cookieParser = require('cookie-parser');
 const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const promiseRetry = require("promise-retry");
+const _ = require('lodash');
 const nodePandoc = require("node-pandoc");
 const ws = require('ws');
 
@@ -60,6 +61,22 @@ const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( versionId TEXT PRIMARY KEY, snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
 const takeSnapshotSQL = db.prepare('WITH latest_without_snapshot AS (SELECT updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1 GROUP BY id) , new_snapshot_time AS (SELECT max(updatedAt) AS updatedAt FROM latest_without_snapshot) INSERT INTO tree_snapshots (versionId, snapshot, treeId, id, content, parentId, position, updatedAt) SELECT (SELECT updatedAt FROM new_snapshot_time) || \':\' || id , (SELECT updatedAt FROM new_snapshot_time), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1;')
+_.mixin({
+  memoizeDebounce: function(func, wait=0, options={}) {
+    var mem = _.memoize(function() {
+      return _.debounce(func, wait, options)
+    }, options.resolver);
+    return function(){mem.apply(this, arguments).apply(this, arguments)}
+  }
+});
+const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
+    console.time('takeSnapshot');
+    takeSnapshotSQL.run({treeId});
+    console.timeEnd('takeSnapshot');
+    console.log('Snapshot taken for tree ' + treeId);
+} , 5 * 60 * 1000 /* 5 minutes */
+  , { maxWait: 25 * 60 * 1000 /* 25 minutes */ }
+);
 
 
 /* ==== SETUP ==== */
@@ -145,19 +162,20 @@ wss.on('connection', (ws, req) => {
           console.time('push');
           let conflictExists = false;
           const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
+          const treeId = msg.d.tr;
 
           // Note : If I'm not generating any hybrid logical clock values,
           // then having this here is likely pointless.
           hlc.recv(lastTs);
 
           const deltasTx = db.transaction(() => {
-            const treeId = msg.d.tr;
             for (let delta of msg.d.dlts) {
               runDelta(treeId, delta, userId)
             }
           });
           try {
             deltasTx();
+            takeSnapshotDebounced(treeId);
           } catch (e) {
             conflictExists = true; // TODO : Check if this is the right error
             console.log(e.message);
