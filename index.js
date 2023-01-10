@@ -57,6 +57,10 @@ const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, posit
 const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE WHERE id = ?');
 
+// Tree Snapshots Table
+db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( versionId TEXT PRIMARY KEY, snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
+const takeSnapshotSQL = db.prepare('WITH latest_without_snapshot AS (SELECT updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1 GROUP BY id) , new_snapshot_time AS (SELECT max(updatedAt) AS updatedAt FROM latest_without_snapshot) INSERT INTO tree_snapshots (versionId, snapshot, treeId, id, content, parentId, position, updatedAt) SELECT (SELECT updatedAt FROM new_snapshot_time) || \':\' || id , (SELECT updatedAt FROM new_snapshot_time), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1;')
+
 
 /* ==== SETUP ==== */
 
@@ -147,8 +151,9 @@ wss.on('connection', (ws, req) => {
           hlc.recv(lastTs);
 
           const deltasTx = db.transaction(() => {
+            const treeId = msg.d.tr;
             for (let delta of msg.d.dlts) {
-              runDelta(delta, userId)
+              runDelta(treeId, delta, userId)
             }
           });
           try {
@@ -644,13 +649,13 @@ app.get('*', (req, res) => {
 
 /* ==== Delta Handlers ==== */
 
-function runDelta(delta, userId) {
+function runDelta(treeId, delta, userId) {
   const ts = delta.ts;
 
   for (let op of delta.ops) {
     switch (op.t) {
       case 'i':
-        runIns(ts, userId, delta.id, op);
+        runIns(ts, treeId, userId, delta.id, op);
         break;
 
       case 'u':
@@ -672,16 +677,16 @@ function runDelta(delta, userId) {
   }
 }
 
-function runIns(ts, userId, id, ins )  {
+function runIns(ts, treeId, userId, id, ins )  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let userTrees = treesByOwner.all(userId);
-  if (!userTrees.map(t => t.id).includes(ins.tr)) {
-    throw new Error(`User ${userId} doesn't have access to tree ${ins.tr}`);
+  if (!userTrees.map(t => t.id).includes(treeId)) {
+    throw new Error(`User ${userId} doesn't have access to tree ${treeId}`);
   }
 
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
-    cardInsert.run(ts, id, ins.tr, ins.c, ins.p, ins.pos, 0);
+    cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
     console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
   } else {
     throw new Error('Ins Conflict : Parent not present');
