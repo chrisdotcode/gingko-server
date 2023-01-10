@@ -59,8 +59,8 @@ const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WH
 const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE WHERE id = ?');
 
 // Tree Snapshots Table
-db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( versionId TEXT PRIMARY KEY, snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
-const takeSnapshotSQL = db.prepare('WITH latest_without_snapshot AS (SELECT updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1 GROUP BY id) , new_snapshot_time AS (SELECT max(updatedAt) AS updatedAt FROM latest_without_snapshot) INSERT INTO tree_snapshots (versionId, snapshot, treeId, id, content, parentId, position, updatedAt) SELECT (SELECT updatedAt FROM new_snapshot_time) || \':\' || id , (SELECT updatedAt FROM new_snapshot_time), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = @treeId AND deleted != 1;')
+db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
+const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = ? AND deleted != 1');
 _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
     var mem = _.memoize(function() {
@@ -71,11 +71,11 @@ _.mixin({
 });
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
     console.time('takeSnapshot');
-    takeSnapshotSQL.run({treeId});
+    takeSnapshotSQL.run(treeId);
     console.timeEnd('takeSnapshot');
     console.log('Snapshot taken for tree ' + treeId);
-} , 5 * 60 * 1000 /* 5 minutes */
-  , { maxWait: 25 * 60 * 1000 /* 25 minutes */ }
+} , 5 * 1 * 1000 /* 5 seconds */
+  , { maxWait: 25 * 1 * 1000 /* 25 seconds */ }
 );
 
 
