@@ -14,6 +14,7 @@ const config = require("./config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const promiseRetry = require("promise-retry");
 const _ = require('lodash');
+const diff = require('fast-diff');
 const nodePandoc = require("node-pandoc");
 const ws = require('ws');
 
@@ -61,6 +62,8 @@ const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
 const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = ? AND deleted != 1');
+const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
+
 _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
     var mem = _.memoize(function() {
@@ -195,6 +198,21 @@ wss.on('connection', (ws, req) => {
             })
           }
           console.timeEnd('push');
+          break;
+
+        case 'snapshot-test':
+          console.time('snapshot-test');
+          const snapshots = getSnapshots.all(msg.d);
+          const processedSnapshots = _.chain(snapshots)
+             .groupBy('snapshot')
+             .reverse()
+             .values()
+             .value();
+          console.log('processedSnapshots', processedSnapshots);
+
+          const testDiff = treeVersionsDiff(processedSnapshots[4], processedSnapshots[5]);
+          console.log(testDiff);
+          console.timeEnd('snapshot-test');
           break;
       }
     } catch (e) {
@@ -772,6 +790,55 @@ function isAncestor(cardId , targetParentId ) {
   }
 }
 
+function treeVersionsDiff(fromCards, toCards) {
+  const deltasRaw = [];
+  const allCardIds = new Set([...fromCards.map(c => c.id), ...toCards.map(c => c.id)]);
+
+  allCardIds.forEach(cardId => {
+    const fromCard = fromCards.find(c => c.id == cardId);
+    const toCard = toCards.find(c => c.id == cardId);
+    if (fromCard && toCard) {
+      deltasRaw.push(cardDiff(fromCard, toCard));
+    } else if (!fromCard && toCard) {
+      deltasRaw.push(cardInsertDelta(toCard));
+    }
+  })
+  const [unchangedIds, deltasChanged] = _.chain(deltasRaw).partition(d => typeof d == 'string').value();
+  return deltasChanged.concat({id: 'unchanged', content: unchangedIds, parentId: 0, position: null});
+}
+
+function cardInsertDelta(card) {
+  return _.omit(card, ['snapshot','treeId', 'updatedAt']);
+}
+
+function cardDiff(fromCard, toCard) {
+  const contentChanged = fromCard.content != toCard.content;
+  const parentChanged = fromCard.parentId != toCard.parentId;
+  const positionChanged = fromCard.position != toCard.position;
+
+  if (!contentChanged && !parentChanged && !positionChanged) {
+    return fromCard.id
+  }
+
+  const content = contentChanged ? diff(fromCard.content, toCard.content).map(diffMinimzer) : null;
+  const parentId = parentChanged ? toCard.parentId : 0;
+  const position = positionChanged ? toCard.pos : null;
+  return { id: toCard.id, content, position, parentId };
+}
+
+function diffMinimzer (d) {
+  if (d[0] == diff.EQUAL) {
+    return d[1].length;
+  }
+
+  if (d[0] == diff.INSERT) {
+    return d[1];
+  }
+
+  if (d[0] == diff.DELETE) {
+    return -1*d[1].length;
+  }
+}
 
 /* === HELPERS === */
 
