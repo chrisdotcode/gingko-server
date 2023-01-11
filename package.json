@@ -4,7 +4,7 @@
   "description": "Server for Gingko 2 web.",
   "main": "index.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest --watch"
   },
   "type": "module",
   "author": "Adriano Ferrari",

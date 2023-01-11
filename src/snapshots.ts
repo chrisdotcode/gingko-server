@@ -32,7 +32,6 @@ interface SnapshotDelta extends SnapshotRowBase {
 
 export function compact (snapshotRows : SnapshotCard[]) : SnapshotCompaction[] {
     const snapshots = _.chain(snapshotRows).sortBy('snapshot').groupBy('snapshot').values().value();
-    console.log(snapshots);
 
     if (snapshots.length == 0 || snapshots.length == 1) {
         return [];
@@ -65,7 +64,11 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
     })
     const [unchanged, changed] = _.partition(deltasRaw, d => d.unchanged);
     const unchangedIds = unchanged.map(d => d.id);
-    return [...changed, {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}].map(stringifyDelta);
+    if (unchangedIds.length > 0) {
+        return [...changed, {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}].map(stringifyDelta);
+    } else {
+        return changed.map(stringifyDelta);
+    }
 }
 
 function stringifyDelta (d : SnapshotDelta) : SnapshotDeltaStringified {
