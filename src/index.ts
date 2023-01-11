@@ -10,7 +10,7 @@ const sgMail = require('@sendgrid/mail');
 const proxy = require('express-http-proxy');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
-const config = require("./config.js");
+const config = require("../config.js");
 const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
 const promiseRetry = require("promise-retry");
 const _ = require('lodash');
@@ -679,7 +679,7 @@ app.use(express.static("../client/web"));
 
 // Respond to all non-file requests with index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../client/web/index.html'));
+  res.sendFile(path.resolve(__dirname, '../../client/web/index.html'));
 });
 
 
