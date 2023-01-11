@@ -91,3 +91,48 @@ function diffMinimizer (d : Diff) : (string | number) {
         case diff.DELETE: return -d[1].length;
     }
 }
+
+function expand(base : SnapshotCard[], delta : SnapshotDeltaStringified[]) : SnapshotCard[] {
+    const unchanged = delta.find(d => d.id == 'unchanged')!;
+    const unchangedIds = JSON.parse(unchanged.content!) as string[];
+    const unchangedCards = base.filter(c => unchangedIds.includes(c.id));
+    const changedCards = delta.filter(d => d.id != 'unchanged').map(d => expandCard(base, d));
+    return [...unchangedCards, ...changedCards];
+}
+
+function expandCard(base : SnapshotCard[], delta : SnapshotDeltaStringified) : SnapshotCard {
+    const deltaParsed = parseDelta(delta);
+    const baseCard = base.find(c => c.id == deltaParsed.id)!;
+    let content;
+    if (deltaParsed.content == null) {
+        content = baseCard.content;
+    } else if (typeof deltaParsed.content == 'string') {
+        content = deltaParsed.content;
+    } else {
+        content = applyDiff(baseCard.content, deltaParsed.content);
+    }
+    return { id: deltaParsed.id, content, position: deltaParsed.position, parentId: deltaParsed.parentId, snapshot: deltaParsed.snapshot, treeId: deltaParsed.treeId, updatedAt: deltaParsed.updatedAt, delta: false };
+}
+
+function parseDelta(delta : SnapshotDeltaStringified) : SnapshotDelta {
+    return { id: delta.id, content: JSON.parse(delta.content!) as (string | number)[], position: delta.position, parentId: delta.parentId, snapshot: delta.snapshot, treeId: delta.treeId, updatedAt: delta.updatedAt, delta: true, unchanged: false };
+}
+
+function applyDiff(base : string, diff : (string | number)[]) : string {
+    let result = '';
+    let baseIndex = 0;
+    for (let i = 0; i < diff.length; i++) {
+        const d = diff[i];
+        if (typeof d == 'number') {
+            if (d > 0) {
+                result += base.substr(baseIndex, d);
+                baseIndex += d;
+            } else {
+                baseIndex -= d;
+            }
+        } else {
+            result += d;
+        }
+    }
+    return result;
+}
