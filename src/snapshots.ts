@@ -65,14 +65,14 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
     const [unchanged, changed] = _.partition(deltasRaw, d => d.unchanged);
     const unchangedIds = unchanged.map(d => d.id);
     if (unchangedIds.length > 0) {
-        return [...changed, {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}].map(stringifyDelta);
+        return [{id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}, ...changed].map(stringifyDelta);
     } else {
         return changed.map(stringifyDelta);
     }
 }
 
 function stringifyDelta (d : SnapshotDelta) : SnapshotDeltaStringified {
-    return { id: d.id, content: JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
+    return { id: d.id, content: d.content == null ? null : JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
 }
 
 function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelta {
