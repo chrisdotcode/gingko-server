@@ -1,3 +1,4 @@
+//@ts-strict-ignore
 // Node.js
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -72,19 +73,19 @@ const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WH
 const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE WHERE id = ?');
 
 // Tree Snapshots Table
-db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT)')
-const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt FROM cards WHERE treeId = ? AND deleted != 1');
+db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
+const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
 
 _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
     var mem = _.memoize(function() {
       return _.debounce(func, wait, options)
-      // @ts-ignore
     }, options.resolver);
     return function(){mem.apply(this, arguments).apply(this, arguments)}
   }
 });
+//@ts-ignore
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
     console.time('takeSnapshot');
     takeSnapshotSQL.run(treeId);
@@ -218,7 +219,6 @@ wss.on('connection', (ws, req) => {
           console.time('snapshot-test');
           const snapshots = getSnapshots.all(msg.d);
           const testDiff = compact(snapshots);
-          console.log(testDiff);
           console.timeEnd('snapshot-test');
           break;
       }
