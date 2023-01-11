@@ -22,7 +22,7 @@ import Stripe from 'stripe';
 // Misc
 import promiseRetry from "promise-retry";
 import _ from "lodash";
-import diff from "fast-diff";
+import { diff } from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -224,7 +224,7 @@ wss.on('connection', (ws, req) => {
              .value();
           console.log('processedSnapshots', processedSnapshots);
 
-          const testDiff = treeVersionsDiff(processedSnapshots[4], processedSnapshots[5]);
+          const testDiff = diff(processedSnapshots[4], processedSnapshots[5]);
           console.log(testDiff);
           console.timeEnd('snapshot-test');
           break;
@@ -810,55 +810,6 @@ function isAncestor(cardId , targetParentId ) {
   }
 }
 
-function treeVersionsDiff(fromCards, toCards) {
-  const deltasRaw = [];
-  const allCardIds = new Set([...fromCards.map(c => c.id), ...toCards.map(c => c.id)]);
-
-  allCardIds.forEach(cardId => {
-    const fromCard = fromCards.find(c => c.id == cardId);
-    const toCard = toCards.find(c => c.id == cardId);
-    if (fromCard && toCard) {
-      deltasRaw.push(cardDiff(fromCard, toCard));
-    } else if (!fromCard && toCard) {
-      deltasRaw.push(cardInsertDelta(toCard));
-    }
-  })
-  const [unchangedIds, deltasChanged] = _.chain(deltasRaw).partition(d => typeof d == 'string').value();
-  return deltasChanged.concat({id: 'unchanged', content: unchangedIds, parentId: 0, position: null});
-}
-
-function cardInsertDelta(card) {
-  return _.omit(card, ['snapshot','treeId', 'updatedAt']);
-}
-
-function cardDiff(fromCard, toCard) {
-  const contentChanged = fromCard.content != toCard.content;
-  const parentChanged = fromCard.parentId != toCard.parentId;
-  const positionChanged = fromCard.position != toCard.position;
-
-  if (!contentChanged && !parentChanged && !positionChanged) {
-    return fromCard.id
-  }
-
-  const content = contentChanged ? diff(fromCard.content, toCard.content).map(diffMinimzer) : null;
-  const parentId = parentChanged ? toCard.parentId : 0;
-  const position = positionChanged ? toCard.pos : null;
-  return { id: toCard.id, content, position, parentId };
-}
-
-function diffMinimzer (d) {
-  if (d[0] == diff.EQUAL) {
-    return d[1].length;
-  }
-
-  if (d[0] == diff.INSERT) {
-    return d[1];
-  }
-
-  if (d[0] == diff.DELETE) {
-    return -1*d[1].length;
-  }
-}
 
 /* === HELPERS === */
 
