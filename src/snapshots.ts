@@ -1,8 +1,9 @@
 import _ from 'lodash';
 import diff, {Diff} from "fast-diff";
 
-interface SnapshotCompaction {
+export interface SnapshotCompaction {
     snapshot: number;
+    treeId: string;
     compactedData : SnapshotDeltaStringified[];
 }
 
@@ -12,6 +13,7 @@ interface SnapshotRowBase{
     treeId: string;
     parentId: string | number;
     position: number | null;
+    updatedAt: string;
     delta: boolean;
 }
 
@@ -42,10 +44,9 @@ export function compact (snapshotRows : SnapshotCard[]) : SnapshotCompaction[] {
         const currSnapshot = snapshots[i];
         if (currSnapshot[0].delta == false, oldSnapshot[0].delta == false) {
             // Replace oldSnapshot with a delta-encoded version
-            result.push({snapshot: oldSnapshot[0].snapshot, compactedData: delta(currSnapshot, oldSnapshot)});
+            result.push({snapshot: oldSnapshot[0].snapshot, treeId: oldSnapshot[0].treeId, compactedData: delta(currSnapshot, oldSnapshot)});
         }
     }
-    console.log(result);
     return result;
 }
 
@@ -64,11 +65,11 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
     })
     const [unchanged, changed] = _.partition(deltasRaw, d => d.unchanged);
     const unchangedIds = unchanged.map(d => d.id);
-    return [...changed, {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, delta: true, unchanged: true}].map(stringifyDelta);
+    return [...changed, {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}].map(stringifyDelta);
 }
 
 function stringifyDelta (d : SnapshotDelta) : SnapshotDeltaStringified {
-    return { id: d.id, content: JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, delta: true };
+    return { id: d.id, content: JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
 }
 
 function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelta {
@@ -80,7 +81,7 @@ function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelt
     const content = contentChanged ? diff(fromCard.content, toCard.content).map(diffMinimizer) : null;
     const parentId = parentChanged ? toCard.parentId : 0;
     const position = positionChanged ? toCard.position : null;
-    return { id: toCard.id, content, position, parentId, snapshot: toCard.snapshot, treeId: toCard.treeId, delta: true, unchanged };
+    return { id: toCard.id, content, position, parentId, snapshot: toCard.snapshot, treeId: toCard.treeId, updatedAt: toCard.updatedAt, delta: true, unchanged };
 }
 
 function diffMinimizer (d : Diff) : (string | number) {

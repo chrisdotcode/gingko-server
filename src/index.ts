@@ -23,7 +23,7 @@ import Stripe from 'stripe';
 // Misc
 import promiseRetry from "promise-retry";
 import _ from "lodash";
-import { compact } from './snapshots.js';
+import {compact, SnapshotCompaction} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -76,6 +76,16 @@ const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
 const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
+const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
+const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
+const compactAll = db.transaction((compactions : SnapshotCompaction[]) => {
+  for(const compaction of compactions) {
+    removeSnapshot.run(compaction.snapshot, compaction.treeId);
+    for (const row of compaction.compactedData) {
+      insertSnapshotDeltaRow.run(row);
+    }
+  }
+});
 
 _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
@@ -219,6 +229,7 @@ wss.on('connection', (ws, req) => {
           console.time('snapshot-test');
           const snapshots = getSnapshots.all(msg.d);
           const testDiff = compact(snapshots);
+          compactAll(testDiff);
           console.timeEnd('snapshot-test');
           break;
       }
