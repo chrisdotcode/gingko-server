@@ -1,7 +1,32 @@
 import _ from 'lodash';
-import * as fastDiff from "fast-diff";
+import diff from "fast-diff";
 
-export function diff(fromCards, toCards) {
+interface SnapshotRow {
+    snapshot: number;
+    treeId: string;
+    id: string;
+    content: string;
+    parentId: string | null | number;
+    position: number | null;
+    delta: true;
+}
+
+interface SnapshotDelta {
+    id: Unchanged | string,
+    content: [string | number] |string,
+    parentId: string | number,
+    position: number | null,
+}
+type Unchanged = {type: 'unchanged'};
+function Unchanged() { return {type: 'unchanged'}; }
+
+
+export function compact (snapshots : SnapshotRow[]) : SnapshotRow[] {
+    console.log('compact', snapshots);
+    return [];
+}
+
+function delta(fromCards, toCards) : SnapshotDelta[] {
     const deltasRaw = [];
     const allCardIds = new Set([...fromCards.map(c => c.id), ...toCards.map(c => c.id)]);
 
@@ -15,7 +40,7 @@ export function diff(fromCards, toCards) {
         }
     })
     const [unchangedIds, deltasChanged] = _.chain(deltasRaw).partition(d => typeof d == 'string').value();
-    return deltasChanged.concat({id: 'unchanged', content: unchangedIds, parentId: 0, position: null});
+    return deltasChanged.concat({id: Unchanged(), content: unchangedIds, parentId: 0, position: null});
 }
 
 function cardInsertDelta(card) {
@@ -31,22 +56,22 @@ function cardDiff(fromCard, toCard) {
         return fromCard.id
     }
 
-    const content = contentChanged ? fastDiff(fromCard.content, toCard.content).map(diffMinimizer) : null;
+    const content = contentChanged ? diff(fromCard.content, toCard.content).map(diffMinimizer) : null;
     const parentId = parentChanged ? toCard.parentId : 0;
     const position = positionChanged ? toCard.pos : null;
     return { id: toCard.id, content, position, parentId };
 }
 
 function diffMinimizer (d) {
-    if (d[0] == fastDiff.EQUAL) {
+    if (d[0] == diff.EQUAL) {
         return d[1].length;
     }
 
-    if (d[0] == fastDiff.INSERT) {
+    if (d[0] == diff.INSERT) {
         return d[1];
     }
 
-    if (d[0] == fastDiff.DELETE) {
+    if (d[0] == diff.DELETE) {
         return -1*d[1].length;
     }
 }

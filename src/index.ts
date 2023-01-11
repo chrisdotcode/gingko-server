@@ -22,7 +22,7 @@ import Stripe from 'stripe';
 // Misc
 import promiseRetry from "promise-retry";
 import _ from "lodash";
-import { diff } from './snapshots.js';
+import { compact } from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -217,14 +217,7 @@ wss.on('connection', (ws, req) => {
         case 'snapshot-test':
           console.time('snapshot-test');
           const snapshots = getSnapshots.all(msg.d);
-          const processedSnapshots = _.chain(snapshots)
-             .groupBy('snapshot')
-             .reverse()
-             .values()
-             .value();
-          console.log('processedSnapshots', processedSnapshots);
-
-          const testDiff = diff(processedSnapshots[4], processedSnapshots[5]);
+          const testDiff = compact(snapshots);
           console.log(testDiff);
           console.timeEnd('snapshot-test');
           break;
