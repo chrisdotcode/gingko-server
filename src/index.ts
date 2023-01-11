@@ -1,26 +1,38 @@
-const express = require('express');
-const fs = require('fs')
-const path = require('path');
-const crypto = require('node:crypto');
-const URLSafeBase64 = require('urlsafe-base64');
-const uuid = require('uuid');
-const axios = require('axios');
-const hlc = require('@tpp/hybrid-logical-clock');
-const sgMail = require('@sendgrid/mail');
-const proxy = require('express-http-proxy');
-const session = require('express-session');
-const cookieParser = require('cookie-parser');
-const config = require("../config.js");
-const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
-const promiseRetry = require("promise-retry");
-const _ = require('lodash');
-const diff = require('fast-diff');
-const nodePandoc = require("node-pandoc");
-const ws = require('ws');
+// Node.js
+import fs from "node:fs";
+import crypto from "node:crypto";
+
+// Databases
+import Nano from "nano";
+import Database from 'better-sqlite3'
+import { createClient } from "redis";
+
+// Networking & Server
+import express from "express";
+import proxy from "express-http-proxy";
+import session from "express-session";
+import redisConnect from 'connect-redis';
+import cookieParser from "cookie-parser";
+import WebSocket, { WebSocketServer } from "ws";
+import axios from "axios";
+import sgMail from "@sendgrid/mail";
+import config from "../config.js";
+import Stripe from 'stripe';
+
+// Misc
+import promiseRetry from "promise-retry";
+import _ from "lodash";
+import diff from "fast-diff";
+import nodePandoc from "node-pandoc";
+import URLSafeBase64 from "urlsafe-base64";
+import * as uuid from "uuid";
+import hlc from "@tpp/hybrid-logical-clock";
+
+
+
 
 /* ==== SQLite3 ==== */
 
-const Database = require('better-sqlite3');
 const db = new Database('data.sqlite');
 db.pragma('journal_mode = WAL');
 
@@ -68,6 +80,7 @@ _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
     var mem = _.memoize(function() {
       return _.debounce(func, wait, options)
+      // @ts-ignore
     }, options.resolver);
     return function(){mem.apply(this, arguments).apply(this, arguments)}
   }
@@ -84,6 +97,8 @@ const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
 
 /* ==== SETUP ==== */
 
+const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -99,8 +114,7 @@ const server = app.listen(port, () => console.log(`Example app listening at http
 
 // Session
 
-const createClient = require("redis").createClient;
-const RedisStore = require('connect-redis')(session);
+const RedisStore = redisConnect(session);
 const redis = createClient({legacyMode: true});
 redis.connect().catch(console.error);
 
@@ -120,7 +134,7 @@ app.use(session({
 
 /* ==== WebSocket ==== */
 
-const wss = new ws.WebSocketServer({noServer: true});
+const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
 
 wss.on('connection', (ws, req) => {
@@ -234,6 +248,7 @@ server.on('upgrade', async (request, socket, head) => {
     socket.destroy();
   } else {
     const session = await new Promise((resolve, reject) => {
+      // @ts-ignore
       redis.get(`sess:${signedCookie}`, (err, data) => {
         if (err) {
           reject(err);
@@ -242,6 +257,7 @@ server.on('upgrade', async (request, socket, head) => {
         }
       });
     });
+    // @ts-ignore
     if (session.user) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         request.session = session;
@@ -320,6 +336,7 @@ app.post('/signup', async (req, res) => {
         let settingsRes = await userDb.insert(settings);
         settings["rev"] = settingsRes.rev;
 
+        //@ts-ignore
         await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
 
         let data = {email: email, db: userDbName, settings: settings};
@@ -497,13 +514,13 @@ app.post('/pleasenospam', async (req, res) => {
 
 /* ==== Payment ==== */
 
-const Stripe = require('stripe');
-const stripe = Stripe(config.STRIPE_SECRET_KEY);
+const stripe = new Stripe(config.STRIPE_SECRET_KEY, { apiVersion: '2022-11-15', typescript: true });
 
 app.post('/create-checkout-session', async (req, res) => {
   const { priceId, customer_email } = req.body;
 
   try {
+    // @ts-ignore : docs say to remove 'payment_method_types' but typescript complains
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [
@@ -558,9 +575,11 @@ app.post('/hooks', async (req, res) => {
       let userDb = nano.use(userDbName);
 
       // Update user's settings
-      let settings = {};
+      let settings = {} as SettingsDoc;
       try {
+        // @ts-ignore
         settings = await userDb.get('settings');
+        console.log('settings', settings);
       } catch (err) {
         if (err.error === "not_found") {
           settings = defaultSettings(email, "en", Date.now(), 14);
@@ -653,7 +672,7 @@ app.delete('/test/user', async (req, res) => {
 });
 
 app.post('/test/trees', async (req, res) => {
-  trees = req.body;
+  const trees = req.body;
   try {
     upsertMany(trees);
     res.status(200).send();
@@ -679,7 +698,8 @@ app.use(express.static("../client/web"));
 
 // Respond to all non-file requests with index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../../client/web/index.html'));
+  const index = new URL('../../client/web/index.html', import.meta.url).pathname;
+  res.sendFile(index);
 });
 
 
@@ -843,7 +863,7 @@ function diffMinimzer (d) {
 /* === HELPERS === */
 
 
-designDocList =
+const designDocList =
   {
     "_id": "_design/testDocList",
     "views": {
@@ -854,14 +874,22 @@ designDocList =
     "language": "javascript"
   };
 
-
-function defaultSettings(email, language = "en", trialStart, trialLength, confirmedTime) {
-  let trialExpires = trialStart + trialLength*24*3600*1000;
-  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: (confirmedTime || null)};
+interface SettingsDoc {
+    _id: string;
+    email: string;
+    language: string;
+    paymentStatus: {trialExpires: number} | { customer : string };
+    confirmedAt : number;
 }
 
 
-function toHex(s) {
+function defaultSettings(email, language = "en", trialStart, trialLength, confirmedTime:number=null) : SettingsDoc {
+  let trialExpires = trialStart + trialLength*24*3600*1000;
+  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: confirmedTime};
+}
+
+
+function toHex(str) {
     // utf8 to latin1
     var s = unescape(encodeURIComponent(s));
     var h = "";
