@@ -1,4 +1,4 @@
-import {compact} from '../dist/snapshots.js';
+import {compact, expand} from '../dist/snapshots.js';
 
 test('compacting empty should return empty', () => {
     expect(compact([])).toEqual([]);
@@ -63,4 +63,22 @@ test('various changes', () => {
     ];
     const expected = [{snapshot: 1, treeId: '1', compactedData: expectedData}];
     expect(compact([...snapshot1, ...snapshot2])).toEqual(expected);
+});
+
+test('various changes, encode then decode', () => {
+    const snapshot1 = [
+        {id: '1', snapshot: 1, treeId: '1', parentId: null, position: 0, updatedAt: '976', delta: false, content: 'Ok, some things'},
+        {id: '2', snapshot: 1, treeId: '1', parentId: '5', position: 0, updatedAt: '449', delta: false, content: ': lest'},
+        {id: '3', snapshot: 1, treeId: '1', parentId: '1', position: 0, updatedAt: '371', delta: false, content: ' asdfsdaf asdf'},
+        {id: '4', snapshot: 1, treeId: '1', parentId: '1', position: 1, updatedAt: '607', delta: false, content: 'Mid child'},
+        {id: '5', snapshot: 1, treeId: '1', parentId: '1', position: 2, updatedAt: '455', delta: false, content: 'New card'}
+    ];
+    const snapshot2 = [
+        {id: '1', snapshot: 2, treeId: '1', parentId: null, position: 0, updatedAt: '976', delta: false, content: 'Ok, some things'},
+        {id: '2', snapshot: 2, treeId: '1', parentId: '5', position: 0, updatedAt: '748', delta: false, content: 'A change'},
+        {id: '3', snapshot: 2, treeId: '1', parentId: '1', position: 0, updatedAt: '845', delta: false, content: 'No keyboard mashing'},
+        {id: '5', snapshot: 2, treeId: '1', parentId: null, position: 1, updatedAt: '690', delta: false, content: 'New card'}
+    ];
+    const encodeDecode = expand(snapshot2, compact([...snapshot1, ...snapshot2]));
+    expect(encodeDecode).toEqual(snapshot1);
 });

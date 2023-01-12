@@ -73,7 +73,13 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
 }
 
 function stringifyDelta (d : SnapshotDelta) : SnapshotDeltaStringified {
-    return { id: d.id, content: d.content == null || typeof d.content == 'string' ? d.content : JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
+    let newContent;
+    if (d.content == null || typeof d.content == 'string') {
+        newContent = d.content;
+    } else {
+        newContent = JSON.stringify(d.content);
+    }
+    return { id: d.id, content: newContent, position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
 }
 
 function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelta {
@@ -98,12 +104,16 @@ function diffMinimizer (d : Diff) : (string | number) {
     }
 }
 
-function expand(base : SnapshotCard[], delta : SnapshotDeltaStringified[]) : SnapshotCard[] {
-    const unchanged = delta.find(d => d.id == 'unchanged')!;
-    const unchangedIds = JSON.parse(unchanged.content!) as string[];
-    const unchangedCards = base.filter(c => unchangedIds.includes(c.id));
-    const changedCards = delta.filter(d => d.id != 'unchanged').map(d => expandCard(base, d));
-    return [...unchangedCards, ...changedCards];
+export function expand(base : SnapshotCard[], deltas : SnapshotDeltaStringified[]) : SnapshotCard[] {
+    const result : SnapshotCard[] = [];
+    deltas.forEach(delta => {
+        if (delta.id == 'unchanged' && delta.content !== null) {
+            result.push(...base.filter(c => (JSON.parse(delta.content as string).includes(c.id))));
+        } else {
+            result.push(expandCard(base, delta));
+        }
+    })
+    return result;
 }
 
 function expandCard(base : SnapshotCard[], delta : SnapshotDeltaStringified) : SnapshotCard {
@@ -121,6 +131,12 @@ function expandCard(base : SnapshotCard[], delta : SnapshotDeltaStringified) : S
 }
 
 function parseDelta(delta : SnapshotDeltaStringified) : SnapshotDelta {
+    let content;
+    if (delta.content == null) {
+        content = null;
+    } else if (typeof delta.content == 'string') {
+        content = delta.content;
+    }
     return { id: delta.id, content: JSON.parse(delta.content!) as (string | number)[], position: delta.position, parentId: delta.parentId, snapshot: delta.snapshot, treeId: delta.treeId, updatedAt: delta.updatedAt, delta: true, unchanged: false };
 }
 
