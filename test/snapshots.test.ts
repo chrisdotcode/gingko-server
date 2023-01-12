@@ -1,4 +1,5 @@
 import {compact, expand} from '../dist/snapshots.js';
+import Fuzz from "jest-fuzz";
 
 test('compacting empty should return empty', () => {
     expect(compact([])).toEqual([]);
@@ -99,3 +100,19 @@ test('various changes, encode then decode', () => {
     const expandedResult = expand(snapshot2, compactResult).sort((a, b) => a.id.localeCompare(b.id));
     expect(expandedResult).toEqual(snapshot1);
 });
+
+const snapshotFuzzer = Fuzz.Fuzzer({
+    id: Fuzz.string({length: 5}),
+    content: Fuzz.string(),
+    parentId: Fuzz.string({length: 5}),
+    position: Fuzz.float({min: -100, max: 100}),
+    updatedAt: Fuzz.string({length: 24}),
+});
+
+Fuzz.test('fuzz test <= 100 cards', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
+    const snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
+    const snapshot2 = snapshot1.map((card) => ({...card, snapshot: 2}));
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData.sort((a, b) => a.id.localeCompare(b.id));
+    const expandedResult = expand(snapshot2, compactResult).sort((a, b) => a.id.localeCompare(b.id));
+    expect(expandedResult).toEqual(snapshot1);
+})

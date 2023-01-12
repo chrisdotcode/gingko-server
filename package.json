@@ -39,6 +39,7 @@
     "@types/lodash": "^4.14.191",
     "babel-jest": "^29.3.1",
     "jest": "^29.3.1",
+    "jest-fuzz": "^0.1.2",
     "typescript-strict-plugin": "^2.1.0"
   }
 }
