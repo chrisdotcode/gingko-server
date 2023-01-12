@@ -1,5 +1,8 @@
 import _ from 'lodash';
-import diff, {Diff} from "fast-diff";
+// @ts-ignore
+import diff from 'textdiff-create';
+// @ts-ignore
+import patch from 'textdiff-patch';
 
 export interface SnapshotCompaction {
     snapshot: number;
@@ -97,20 +100,43 @@ function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelt
     return { id: toCard.id, content, position, parentId, snapshot: toCard.snapshot, treeId: toCard.treeId, updatedAt: toCard.updatedAt, delta: true, unchanged };
 }
 
+type Diff = [0, number] | [1, string] | [-1, number];
+
 function diffMinimizer (d : Diff) : (string | number) {
-    switch (d[0]) {
-        case diff.EQUAL: return d[1].length;
-        case diff.INSERT: return d[1];
-        case diff.DELETE: return -d[1].length;
+    const EQUAL = 0;
+    const INSERT = 1;
+    const DELETE = -1;
+    if (d[0] == EQUAL) {
+        return d[1];
+    } else if (d[0] == INSERT) {
+        return d[1];
+    } else if (d[0] == DELETE) {
+        return -d[1];
+    } else {
+        throw new Error('Invalid diff');
     }
 }
 
-/*
+function diffMaximizer (d : (string | number)) : Diff {
+    const EQUAL = 0;
+    const INSERT = 1;
+    const DELETE = -1;
+    if (typeof d == 'number') {
+        if (d > 0) {
+            return [EQUAL, d];
+        } else {
+            return [DELETE, -d];
+        }
+    } else {
+        return [INSERT, d];
+    }
+}
+
 export function expand(base : SnapshotCard[], deltas : SnapshotDeltaStringified[]) : SnapshotCard[] {
     const result : SnapshotCard[] = [];
     deltas.forEach(delta => {
         if (delta.id == 'unchanged' && delta.content !== null) {
-            result.push(...base.filter(c => (JSON.parse(delta.content as string).includes(c.id))));
+            result.push(...base.filter(c => (JSON.parse(delta.content as string).includes(c.id))).map(c => ({...c, snapshot: delta.snapshot})));
         } else {
             result.push(expandCard(base, delta));
         }
@@ -119,45 +145,26 @@ export function expand(base : SnapshotCard[], deltas : SnapshotDeltaStringified[
 }
 
 function expandCard(base : SnapshotCard[], delta : SnapshotDeltaStringified) : SnapshotCard {
-    const deltaParsed = parseDelta(delta);
-    const baseCard = base.find(c => c.id == deltaParsed.id)!;
-    let content;
-    if (deltaParsed.content == null) {
-        content = baseCard.content;
-    } else if (typeof deltaParsed.content == 'string') {
-        content = deltaParsed.content;
+    const baseCard = base.find(c => c.id == delta.id);
+    if (!baseCard) {
+        // Doesn't exist in base, so just return the delta
+        return {...delta, content: delta.content as string, snapshot: delta.snapshot, delta: false};
     } else {
-        content = applyDiff(baseCard.content, deltaParsed.content);
+        const snapshot = delta.snapshot;
+        const content = delta.content == null ? baseCard.content : expandContent(baseCard.content, delta.content as string);
+        const parentId = delta.parentId == 0 ? baseCard.parentId : delta.parentId;
+        const position = delta.position == null ? baseCard.position : delta.position;
+        const updatedAt = delta.updatedAt;
+        return {...baseCard, snapshot, content, parentId, position, updatedAt, delta: false};
     }
-    return { id: deltaParsed.id, content, position: deltaParsed.position, parentId: deltaParsed.parentId, snapshot: deltaParsed.snapshot, treeId: deltaParsed.treeId, updatedAt: deltaParsed.updatedAt, delta: false };
 }
 
-function parseDelta(delta : SnapshotDeltaStringified) : SnapshotDelta {
-    let content;
-    if (delta.content == null) {
-        content = null;
-    } else if (typeof delta.content == 'string') {
-        content = delta.content;
+function expandContent(baseContent : string, deltaContent : string) : string {
+    if (deltaContent.startsWith("~@%`>")) {
+        const diffArray = JSON.parse(deltaContent.slice(5));
+        const diff = diffArray.map(diffMaximizer);
+        return patch(baseContent, diff);
+    } else {
+        return deltaContent;
     }
-    return { id: delta.id, content: JSON.parse(delta.content!) as (string | number)[], position: delta.position, parentId: delta.parentId, snapshot: delta.snapshot, treeId: delta.treeId, updatedAt: delta.updatedAt, delta: true, unchanged: false };
 }
-
-function applyDiff(base : string, diff : (string | number)[]) : string {
-    let result = '';
-    let baseIndex = 0;
-    for (let i = 0; i < diff.length; i++) {
-        const d = diff[i];
-        if (typeof d == 'number') {
-            if (d > 0) {
-                result += base.substr(baseIndex, d);
-                baseIndex += d;
-            } else {
-                baseIndex -= d;
-            }
-        } else {
-            result += d;
-        }
-    }
-    return result;
-}
- */

@@ -81,7 +81,7 @@ test('various changes', () => {
     expect(compact([...snapshot1, ...snapshot2])).toEqual(expected);
 });
 
-test.skip('various changes, encode then decode', () => {
+test('various changes, encode then decode', () => {
     const snapshot1 = [
         {id: '1', snapshot: 1, treeId: '1', parentId: null, position: 0, updatedAt: '976', delta: false, content: 'Ok, some things'},
         {id: '2', snapshot: 1, treeId: '1', parentId: '5', position: 0, updatedAt: '449', delta: false, content: ': lest'},
@@ -95,6 +95,7 @@ test.skip('various changes, encode then decode', () => {
         {id: '3', snapshot: 2, treeId: '1', parentId: '1', position: 0, updatedAt: '845', delta: false, content: 'No keyboard mashing'},
         {id: '5', snapshot: 2, treeId: '1', parentId: null, position: 1, updatedAt: '690', delta: false, content: 'New card'}
     ];
-    const encodeDecode = expand(snapshot2, compact([...snapshot1, ...snapshot2]));
-    expect(encodeDecode).toEqual(snapshot1);
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData.sort((a, b) => a.id.localeCompare(b.id));
+    const expandedResult = expand(snapshot2, compactResult).sort((a, b) => a.id.localeCompare(b.id));
+    expect(expandedResult).toEqual(snapshot1);
 });
