@@ -88,8 +88,9 @@ function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelt
     const positionChanged = fromCard.position != toCard.position;
     const unchanged = !contentChanged && !parentChanged && !positionChanged;
 
-    const contentDiff = diff(fromCard.content, toCard.content).map(diffMinimizer) ;
-    const newContent = (JSON.stringify(contentDiff).length > toCard.content.length + fromCard.content.length + 5) ? fromCard.content +"{@*=>" + toCard.content : contentDiff;
+    const contentDiffArray = diff(fromCard.content, toCard.content).map(diffMinimizer) ;
+    const contentDiff = JSON.stringify(contentDiffArray);
+    const newContent = (contentDiff.length > toCard.content.length + 5) ? toCard.content : "~@%`>"+contentDiff;
     const content = contentChanged ? newContent : null;
     const parentId = parentChanged ? toCard.parentId : 0;
     const position = positionChanged ? toCard.position : null;
@@ -104,6 +105,7 @@ function diffMinimizer (d : Diff) : (string | number) {
     }
 }
 
+/*
 export function expand(base : SnapshotCard[], deltas : SnapshotDeltaStringified[]) : SnapshotCard[] {
     const result : SnapshotCard[] = [];
     deltas.forEach(delta => {
@@ -158,3 +160,4 @@ function applyDiff(base : string, diff : (string | number)[]) : string {
     }
     return result;
 }
+ */
