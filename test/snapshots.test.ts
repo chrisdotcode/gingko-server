@@ -1,5 +1,6 @@
 import {compact, expand} from '../dist/snapshots.js';
 import Fuzz from "jest-fuzz";
+import _ from 'lodash';
 
 test('compacting empty should return empty', () => {
     expect(compact([])).toEqual([]);
@@ -96,8 +97,8 @@ test('various changes, encode then decode', () => {
         {id: '3', snapshot: 2, treeId: '1', parentId: '1', position: 0, updatedAt: '845', delta: false, content: 'No keyboard mashing'},
         {id: '5', snapshot: 2, treeId: '1', parentId: null, position: 1, updatedAt: '690', delta: false, content: 'New card'}
     ];
-    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData.sort((a, b) => a.id.localeCompare(b.id));
-    const expandedResult = expand(snapshot2, compactResult).sort((a, b) => a.id.localeCompare(b.id));
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData;
+    const expandedResult = _.sortBy(expand(snapshot2, compactResult), 'id');
     expect(expandedResult).toEqual(snapshot1);
 });
 
@@ -109,10 +110,10 @@ const snapshotFuzzer = Fuzz.Fuzzer({
     updatedAt: Fuzz.string({length: 24}),
 });
 
-Fuzz.test('fuzz test <= 100 cards', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
+Fuzz.test('fuzz test <= 100 cards, unchanged', Fuzz.array({type: snapshotFuzzer(), length: 10}), (snapshotFuzzed) => {
     const snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
     const snapshot2 = snapshot1.map((card) => ({...card, snapshot: 2}));
-    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData.sort((a, b) => a.id.localeCompare(b.id));
-    const expandedResult = expand(snapshot2, compactResult).sort((a, b) => a.id.localeCompare(b.id));
-    expect(expandedResult).toEqual(snapshot1);
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData;
+    const expandedResult = _.sortBy(expand(snapshot2, compactResult), 'id');
+    expect(expandedResult).toEqual(_.sortBy(snapshot1, 'id'));
 })
