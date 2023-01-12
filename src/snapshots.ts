@@ -117,7 +117,7 @@ function diffMinimizer (d : Diff) : (string | number) {
     }
 }
 
-function diffMaximizer (d : (string | number)) : Diff {
+export function diffMaximizer (d : (string | number)) : Diff {
     const EQUAL = 0;
     const INSERT = 1;
     const DELETE = -1;

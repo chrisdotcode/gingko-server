@@ -1,6 +1,8 @@
 import {compact, expand} from '../dist/snapshots.js';
 import Fuzz from "jest-fuzz";
 import _ from 'lodash';
+import patch from 'textdiff-patch';
+import {diffMaximizer} from "../src/snapshots";
 
 test('compacting empty should return empty', () => {
     expect(compact([])).toEqual([]);
@@ -110,10 +112,44 @@ const snapshotFuzzer = Fuzz.Fuzzer({
     updatedAt: Fuzz.string({length: 24}),
 });
 
-Fuzz.test('fuzz test <= 100 cards, unchanged', Fuzz.array({type: snapshotFuzzer(), length: 10}), (snapshotFuzzed) => {
+Fuzz.test('fuzz test <= 100 cards, unchanged', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
     const snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
     const snapshot2 = snapshot1.map((card) => ({...card, snapshot: 2}));
     const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData;
     const expandedResult = _.sortBy(expand(snapshot2, compactResult), 'id');
     expect(expandedResult).toEqual(_.sortBy(snapshot1, 'id'));
 })
+
+Fuzz.test('fuzz test <= 100 cards, random changes', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
+    let snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
+    let snapshot2 = snapshot1.map((card) => ({...card, snapshot: 2}));
+    snapshot1 = snapshot1.filter((card) => Math.random() < 0.95);
+    snapshot2 = snapshot2.filter((card) => Math.random() < 0.95).map(randomMutation);
+    console.log(snapshot1.length, snapshot2.length);
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData;
+    const expandedResult = _.sortBy(expand(snapshot2, compactResult), 'id');
+    expect(expandedResult).toEqual(_.sortBy(snapshot1, 'id'));
+})
+
+function randomMutation (card) {
+    const randPatch = randomPatch(10).map(diffMaximizer);
+    const newContent = patch(card.content, randPatch);
+    const maybeNewParentId = Math.random() < 0.5 ? card.parentId : Math.random() < 0.5 ? null : Math.random().toString(36).substring(2, 7);
+    const maybeNewPosition = Math.random() < 0.5 ? card.position : Math.random() * 100;
+
+    if (newContent === card.content && maybeNewParentId === card.parentId && maybeNewPosition === card.position) {
+        return card;
+    } else {
+        return {...card, content: newContent, parentId: maybeNewParentId, position: maybeNewPosition, updatedAt: Date.now().toString()};
+    }
+}
+
+function randomPatch(maxLength : number) : (string | number)[] {
+   return Array.from({length: Math.floor(Math.random() * maxLength)}, () => {
+         switch (Math.floor(Math.random() * 3)) {
+              case 0: return Math.random().toString(36).substring(2);
+              case 1: return Math.floor(Math.random() * 100);
+              case 2: return -Math.floor(Math.random() * 100);
+         }
+   });
+}
