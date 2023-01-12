@@ -65,14 +65,15 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
     const [unchanged, changed] = _.partition(deltasRaw, d => d.unchanged);
     const unchangedIds = unchanged.map(d => d.id);
     if (unchangedIds.length > 0) {
-        return [{id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true}, ...changed].map(stringifyDelta);
+        const unchanged = {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true};
+        return _.sortBy([unchanged, ...changed].map(stringifyDelta), 'updatedAt');
     } else {
-        return changed.map(stringifyDelta);
+        return _.sortBy(changed.map(stringifyDelta), 'updatedAt');
     }
 }
 
 function stringifyDelta (d : SnapshotDelta) : SnapshotDeltaStringified {
-    return { id: d.id, content: d.content == null ? null : JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
+    return { id: d.id, content: d.content == null || typeof d.content == 'string' ? d.content : JSON.stringify(d.content), position: d.position, parentId: d.parentId, snapshot: d.snapshot, treeId: d.treeId, updatedAt: d.updatedAt, delta: true };
 }
 
 function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelta {
@@ -81,7 +82,9 @@ function cardDiff(fromCard : SnapshotCard, toCard : SnapshotCard) : SnapshotDelt
     const positionChanged = fromCard.position != toCard.position;
     const unchanged = !contentChanged && !parentChanged && !positionChanged;
 
-    const content = contentChanged ? diff(fromCard.content, toCard.content).map(diffMinimizer) : null;
+    const contentDiff = diff(fromCard.content, toCard.content).map(diffMinimizer) ;
+    const newContent = (JSON.stringify(contentDiff).length > toCard.content.length + fromCard.content.length + 5) ? fromCard.content +"{@*=>" + toCard.content : contentDiff;
+    const content = contentChanged ? newContent : null;
     const parentId = parentChanged ? toCard.parentId : 0;
     const position = positionChanged ? toCard.position : null;
     return { id: toCard.id, content, position, parentId, snapshot: toCard.snapshot, treeId: toCard.treeId, updatedAt: toCard.updatedAt, delta: true, unchanged };

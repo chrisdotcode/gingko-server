@@ -56,10 +56,10 @@ test('various changes', () => {
     ];
     const expectedData = [
         {id: 'unchanged', snapshot: 1, treeId: '1', parentId: 0, position: null, updatedAt: '', delta: true, content: JSON.stringify(['1'])},
-        {id: '2', snapshot: 1, treeId: '1', parentId: 0, position: 0, updatedAt: '449', delta: true, content: JSON.stringify([-8, ": lest"])},
-        {id: '3', snapshot: 1, treeId: '1', parentId: 0, position: 0, updatedAt: '371', delta: true, content: JSON.stringify([-19, " asdfsdaf asdf"])},
-        {id: '4', snapshot: 1, treeId: '1', parentId: '1', position: 1, updatedAt: '607', delta: true, content: 'Mid child'},
-        {id: '5', snapshot: 1, treeId: '1', parentId: '1', position: 2, updatedAt: '455', delta: true, content: null}
+        {id: '3', snapshot: 1, treeId: '1', parentId: 0, position: null, updatedAt: '371', delta: true, content: "No keyboard mashing{@*=> asdfsdaf asdf"},
+        {id: '2', snapshot: 1, treeId: '1', parentId: 0, position: null, updatedAt: '449', delta: true, content: "A change{@*=>: lest"},
+        {id: '5', snapshot: 1, treeId: '1', parentId: '1', position: 2, updatedAt: '455', delta: true, content: null},
+        {id: '4', snapshot: 1, treeId: '1', parentId: '1', position: 1, updatedAt: '607', delta: true, content: 'Mid child'}
     ];
     const expected = [{snapshot: 1, treeId: '1', compactedData: expectedData}];
     expect(compact([...snapshot1, ...snapshot2])).toEqual(expected);
