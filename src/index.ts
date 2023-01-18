@@ -23,7 +23,7 @@ import Stripe from 'stripe';
 // Misc
 import promiseRetry from "promise-retry";
 import _ from "lodash";
-import {compact, SnapshotCompaction} from './snapshots.js';
+import {compact, expand, expandSnapshot, SnapshotCompaction} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -223,6 +223,16 @@ wss.on('connection', (ws, req) => {
             })
           }
           console.timeEnd('push');
+          break;
+
+        case 'pullHistoryMeta':
+          console.time('pullHistoryMeta');
+          const history = getSnapshots.all(msg.d);
+          console.log('history', history);
+          const histGrouped = _.chain(history).groupBy('snapshot').values().value();
+          console.log('histGrouped', histGrouped);
+          const expLast = expandSnapshot(histGrouped[histGrouped.length - 1], histGrouped[histGrouped.length - 2]);
+          console.log('expLast', expLast);
           break;
 
         case 'snapshot-test':

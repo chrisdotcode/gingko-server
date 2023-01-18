@@ -4,6 +4,9 @@ import diff from 'textdiff-create';
 // @ts-ignore
 import patch from 'textdiff-patch';
 
+
+// ===== TYPES =====
+
 export interface SnapshotCompaction {
     snapshot: number;
     treeId: string;
@@ -20,18 +23,31 @@ interface SnapshotRowBase{
     delta: boolean;
 }
 
-interface SnapshotCard extends SnapshotRowBase {
+export interface SnapshotCard extends SnapshotRowBase {
     content: string;
+    delta: false;
 }
 
 interface SnapshotDeltaStringified extends SnapshotRowBase {
     content: string | null;
+    delta: true;
 }
 
 interface SnapshotDelta extends SnapshotRowBase {
     content: (string | number)[] | string  | null;
     unchanged: boolean;
+    delta: true;
 }
+
+function isDeltaStringified(d : SnapshotDeltaStringified | SnapshotCard) : d is SnapshotDeltaStringified {
+    return d.delta;
+}
+
+function isCard(c : SnapshotRowBase) : c is SnapshotCard {
+    return !c.delta;
+}
+
+// =============
 
 export function compact (snapshotRows : SnapshotCard[]) : SnapshotCompaction[] {
     const snapshots = _.chain(snapshotRows).sortBy('snapshot').groupBy('snapshot').values().value();
@@ -62,13 +78,13 @@ function delta(fromCards : SnapshotCard[], toCards : SnapshotCard[]) : SnapshotD
         if (fromCard && toCard) {
             deltasRaw.push(cardDiff(fromCard, toCard));
         } else if (!fromCard && toCard) {
-            deltasRaw.push({...toCard, unchanged: false});
+            deltasRaw.push({...toCard, delta: true, unchanged: false});
         }
     })
     const [unchanged, changed] = _.partition(deltasRaw, d => d.unchanged);
     const unchangedIds = unchanged.map(d => d.id);
     if (unchangedIds.length > 0) {
-        const unchanged = {id: 'unchanged', content: unchangedIds, position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true};
+        const unchanged : SnapshotDelta = {id: 'unchanged', content: JSON.stringify(unchangedIds), position: null, parentId: 0, snapshot: toCards[0].snapshot, treeId: toCards[0].treeId, updatedAt: '', delta: true, unchanged: true};
         return _.sortBy([unchanged, ...changed].map(stringifyDelta), 'updatedAt');
     } else {
         return _.sortBy(changed.map(stringifyDelta), 'updatedAt');
@@ -132,7 +148,23 @@ export function diffMaximizer (d : (string | number)) : Diff {
     }
 }
 
-export function expand(base : SnapshotCard[], deltas : SnapshotDeltaStringified[]) : SnapshotCard[] {
+export function expand(snapshotRows : (SnapshotDeltaStringified| SnapshotCard)[]) : SnapshotCard[][] {
+    const snapshots = _.chain(snapshotRows).sortBy('snapshot').reverse().groupBy('snapshot').values().value();
+
+    for (let i = 1; i < snapshots.length; i++) {
+        const oldSnapshot = snapshots[i-1];
+        const currSnapshot = snapshots[i];
+        if (isDeltaStringified(currSnapshot[0]) && isCard(oldSnapshot[0])) {
+            snapshots[i] = expandSnapshot(oldSnapshot as SnapshotCard[], currSnapshot as SnapshotDeltaStringified[]);
+        }
+    }
+    // @ts-ignore
+    return snapshots;
+}
+
+
+
+export function expandSnapshot(base : SnapshotCard[], deltas : SnapshotDeltaStringified[]) : SnapshotCard[] {
     const result : SnapshotCard[] = [];
     deltas.forEach(delta => {
         if (delta.id == 'unchanged' && delta.content !== null) {
