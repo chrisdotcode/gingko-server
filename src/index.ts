@@ -2,6 +2,7 @@
 // Node.js
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { Buffer } from 'node:buffer';
 
 // Databases
 import Nano from "nano";
@@ -873,13 +874,7 @@ function defaultSettings(email, language = "en", trialStart, trialLength, confir
 
 
 function toHex(str) {
-    // utf8 to latin1
-    var s = unescape(encodeURIComponent(s));
-    var h = "";
-    for (var i = 0; i < s.length; i++) {
-        h += s.charCodeAt(i).toString(16);
-    }
-    return h;
+  return Buffer.from(str).toString('hex');
 }
 
 
