@@ -75,7 +75,7 @@ const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
-const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT unixepoch() || \':\' || treeId, treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
+const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT (1000*unixepoch()) || \':\' || treeId, treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
