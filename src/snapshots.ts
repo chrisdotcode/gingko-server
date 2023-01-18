@@ -148,8 +148,13 @@ export function diffMaximizer (d : (string | number)) : Diff {
     }
 }
 
-export function expand(snapshotRows : (SnapshotDeltaStringified| SnapshotCard)[]) : SnapshotCard[][] {
-    const snapshots = _.chain(snapshotRows).sortBy('snapshot').reverse().groupBy('snapshot').values().value();
+export function expand(snapshotRows : (SnapshotDeltaStringified| SnapshotCard)[]) : SnapshotCard[] {
+    const snapshots = _.chain(snapshotRows)
+      .groupBy('snapshot')
+      .values()
+      .map(s => _.sortBy(s, ['snapshot', 'updatedAt']))
+      .reverse()
+      .value();
 
     for (let i = 1; i < snapshots.length; i++) {
         const oldSnapshot = snapshots[i-1];
@@ -159,7 +164,7 @@ export function expand(snapshotRows : (SnapshotDeltaStringified| SnapshotCard)[]
         }
     }
     // @ts-ignore
-    return snapshots;
+    return _.chain(snapshots).flatten().sortBy(['snapshot', 'updatedAt']).value();
 }
 
 

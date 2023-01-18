@@ -23,7 +23,7 @@ import Stripe from 'stripe';
 // Misc
 import promiseRetry from "promise-retry";
 import _ from "lodash";
-import {compact, expand, expandSnapshot, SnapshotCompaction} from './snapshots.js';
+import {compact, expand, SnapshotCompaction} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -74,7 +74,7 @@ const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
-const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT unixepoch(), treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
+const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT unixepoch() || \':\' || treeId, treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
@@ -225,15 +225,33 @@ wss.on('connection', (ws, req) => {
           console.timeEnd('push');
           break;
 
-        case 'pullHistoryMeta':
+        case 'pullHistoryMeta': {
           console.time('pullHistoryMeta');
-          const history = getSnapshots.all(msg.d);
-          console.log('history', history);
-          const histGrouped = _.chain(history).groupBy('snapshot').values().value();
-          console.log('histGrouped', histGrouped);
-          const expLast = expandSnapshot(histGrouped[histGrouped.length - 1], histGrouped[histGrouped.length - 2]);
-          console.log('expLast', expLast);
+          const treeId = msg.d;
+          const history = getSnapshots.all(treeId);
+          const historyMeta = _.chain(history)
+            .groupBy('snapshot')
+            .mapValues(s => ({id: s[0].snapshot, ts: s[0].snapshot}))
+            .values()
+            .value();
+          ws.send(JSON.stringify({t: 'historyMeta', d: historyMeta, tr: treeId}));
+          console.timeEnd('pullHistoryMeta');
           break;
+        }
+
+        case 'pullHistory': {
+          const treeId = msg.d;
+          console.time('pullHistory');
+          const history = getSnapshots.all(treeId);
+          const expandedHistory = expand(history);
+          const historyData = _.chain(expandedHistory)
+            .groupBy('snapshot')
+            .mapValues(s => ({id: s[0].snapshot, ts: s[0].snapshot, d: s}))
+            .values()
+            .value();
+          ws.send(JSON.stringify({t: 'history', d: historyData, tr: treeId}));
+          break;
+        }
 
         case 'snapshot-test':
           console.time('snapshot-test');

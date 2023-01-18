@@ -132,7 +132,16 @@ Fuzz.test('fuzz expandSnapshot <= 100 cards, random changes', Fuzz.array({type: 
 })
 
 
-/*
+Fuzz.test('fuzz expand two snapshots <= 100 cards, random changes', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
+    let snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
+    let snapshot2 = snapshot1.map((card) => ({...card, snapshot: 2}));
+    snapshot1 = snapshot1.filter((card) => Math.random() < 0.95);
+    snapshot2 = snapshot2.filter((card) => Math.random() < 0.95).map(randomMutation);
+    const compactResult = compact([...snapshot1, ...snapshot2])[0].compactedData;
+    const expandedResult = expand([...snapshot2, ...compactResult]);
+    expect(expandedResult).toEqual(_.sortBy([...snapshot1, ...snapshot2], ['snapshot', 'updatedAt']));
+})
+
 Fuzz.test('fuzz expand multiple snapshots', Fuzz.array({type: snapshotFuzzer(), length: 100}), (snapshotFuzzed) => {
     let snapshot1 = snapshotFuzzed.map((card, i) => ({...card, snapshot: 1, treeId: '1', delta: false}));
     snapshot1 = snapshot1.filter((card) => Math.random() < 0.95);
@@ -143,12 +152,10 @@ Fuzz.test('fuzz expand multiple snapshots', Fuzz.array({type: snapshotFuzzer(), 
     const allSnapshots = [...snapshot1, ...snapshot2, ...snapshot3, ...snapshot4, ...snapshot5];
     const compactResult = compact(allSnapshots);
     const compactRows = compactResult.flatMap((snapshot) =>  snapshot.compactedData);
-    const expandedResult = _.sortBy(expand(compactRows), 'id');
-    console.log('compactRows.id,  expandedResult.id', compactRows.map(c => c.id), expandedResult.map((card) => card.id));
-    //expect(expandedResult).toEqual(_.sortBy(allSnapshots, 'id'));
+    const expandedResult = expand(compactRows);
+    expect(expandedResult).toEqual(compactRows);
 });
 
- */
 
 function randomMutation (card) {
     const randPatch = randomPatch(10).map(diffMaximizer);
