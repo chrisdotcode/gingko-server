@@ -98,10 +98,7 @@ _.mixin({
 });
 //@ts-ignore
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
-    console.time('takeSnapshot');
     takeSnapshotSQL.run(treeId);
-    console.timeEnd('takeSnapshot');
-    console.log('Snapshot taken for tree ' + treeId);
 } , 5 * 1 * 1000 /* 5 seconds */
   , { maxWait: 25 * 1 * 1000 /* 25 seconds */ }
 );
@@ -178,7 +175,6 @@ wss.on('connection', (ws, req) => {
           console.time('pull');
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
-            console.log('cards', cards, msg);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           } else {
             const cards = cardsSince.all(msg.d[0], msg.d[1]);
@@ -612,7 +608,6 @@ app.post('/hooks', async (req, res) => {
       try {
         // @ts-ignore
         settings = await userDb.get('settings');
-        console.log('settings', settings);
       } catch (err) {
         if (err.error === "not_found") {
           settings = defaultSettings(email, "en", Date.now(), 14);
@@ -776,7 +771,7 @@ function runIns(ts, treeId, userId, id, ins )  {
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
     cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
-    console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
+    //console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
   } else {
     throw new Error('Ins Conflict : Parent not present');
   }
@@ -786,7 +781,7 @@ function runUpd(ts, id, upd )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
     cardUpdate.run(ts, upd.c, id);
-    console.log('Updated card ', id, ' to ', JSON.stringify(upd.c));
+    //console.log('Updated card ', id, ' to ', JSON.stringify(upd.c));
   } else if (card == null) {
     throw new Error(`Upd Conflict : Card '${id}' not present.`);
   } else if (card.updatedAt != upd.e) {
@@ -801,7 +796,7 @@ function runMov(ts, id, mov )  {
   const card = cardById.get(id);
   if(card != null && parentPresent && !isAncestor(id, mov.p)) {
     cardMove.run(ts, mov.p, mov.pos, id);
-    console.log('Moved card ', id, ' to ', mov.p, ' at ', mov.pos);
+    //console.log('Moved card ', id, ' to ', mov.p, ' at ', mov.pos);
   } else {
     throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
   }
@@ -811,7 +806,7 @@ function runDel(ts, id, del )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == del.e) {
     cardDelete.run(ts, id);
-    console.log('Deleted card ' + id);
+    //console.log('Deleted card ' + id);
   } else if (card == null) {
     throw new Error(`Del Conflict : Card '${id}' not present`);
   } else if (card.updatedAt != del.e) {
@@ -826,7 +821,7 @@ function runUndel(ts, id)  {
   if (info.changes == 0) {
     throw new Error('Undel Conflict : Card not present');
   }
-  console.log('Undeleted card ' + id);
+  //console.log('Undeleted card ' + id);
 }
 
 // --- Helpers ---
