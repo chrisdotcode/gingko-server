@@ -44,7 +44,6 @@ const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
-const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 
 // Reset Token Table
 db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
@@ -54,6 +53,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
+const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
