@@ -35,7 +35,7 @@ import hlc from "@tpp/hybrid-logical-clock";
 
 /* ==== SQLite3 ==== */
 
-const db = new Database('data.sqlite');
+const db = new Database('../data/data.sqlite');
 db.pragma('journal_mode = WAL');
 
 // Users Table
