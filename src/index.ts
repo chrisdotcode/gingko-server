@@ -106,7 +106,7 @@ const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
 
 /* ==== SETUP ==== */
 
-const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
+const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@127.0.0.1:5984`);
 
 const app = express();
 const port = process.env.PORT || 3000;
