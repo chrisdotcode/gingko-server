@@ -391,16 +391,24 @@ app.post('/login', async (req, res) => {
 
   // Check SQLite DB for user and password
   let user = userByEmail.get(email);
+
   if (user !== undefined) {
     crypto.pbkdf2(password, user.salt, iterations, keylen, digest, (err, derivedKey) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
           // Authentication successful
-          doLogin(req, res, email, userDbName);
+          try {
+            doLogin(req, res, email, userDbName);
+          } catch (loginErr) {
+            console.log(loginErr);
+          }
         } else {
           res.status(401).send();
         }
     });
+  } else {
+    // User not found
+    res.status(401).send();
   }
 });
 
