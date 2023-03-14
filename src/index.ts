@@ -502,7 +502,7 @@ app.post('/reset-password', async (req, res) => {
 
 /* ==== DB proxy ==== */
 
-app.use('/db', proxy('http://localhost:5984', {
+app.use('/db', proxy('http://127.0.0.1:5984', {
   proxyReqOptDecorator: function(proxyReqOpts, srcReq) {
     if (srcReq.session.user) {
       proxyReqOpts.headers['X-Auth-CouchDB-UserName'] = srcReq.session.user;
