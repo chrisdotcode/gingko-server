@@ -38,6 +38,10 @@ import hlc from "@tpp/hybrid-logical-clock";
 const db = new Database('../data/data.sqlite');
 db.pragma('journal_mode = WAL');
 
+// Litestream Recommendations
+db.pragma('busy_timeout = 5000');
+db.pragma('synchronous = NORMAL');
+
 // Users Table
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
