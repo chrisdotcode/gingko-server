@@ -59,6 +59,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
+const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
@@ -215,11 +216,14 @@ wss.on('connection', (ws, req) => {
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           } else {
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
-            wss.clients.forEach(function each(client) {
-              if (client !== ws && client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({t: 'doPull'}));
+
+            const owner = treeOwner.get(treeId);
+            const usersToNotify = [owner];
+            for (const [otherWs, userId] of wsToUser) {
+              if (usersToNotify.includes(userId) && otherWs !== ws) {
+                otherWs.send(JSON.stringify({t: "doPull", d: treeId}));
               }
-            })
+            }
           }
           console.timeEnd('push');
           break;
