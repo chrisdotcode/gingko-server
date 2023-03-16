@@ -75,7 +75,7 @@ const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (updatedAt, id, tree
 const cardUpdate = db.prepare('UPDATE cards SET updatedAt = ?, content = ? WHERE id = ?');
 const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, position = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
-const cardUndelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = FALSE WHERE id = ?');
+const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
@@ -827,7 +827,7 @@ function runDel(ts, id, del )  {
 }
 
 function runUndel(ts, id)  {
-  const info = cardUndelete.run(ts, id);
+  const info = cardUndelete.run(id);
   if (info.changes == 0) {
     throw new Error('Undel Conflict : Card not present');
   }
