@@ -211,10 +211,8 @@ wss.on('connection', (ws, req) => {
           }
 
           if (conflictExists) {
-            /*
-            const cards = cardsSince.all(msg.d.chk);
+            const cards = cardsSince.all(msg.d.tr, msg.d.chk);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
-             */
           } else {
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
             wss.clients.forEach(function each(client) {
