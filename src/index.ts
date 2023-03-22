@@ -43,10 +43,12 @@ db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = NORMAL');
 
 // Users Table
-db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER)');
+const payment_status_constraint = 'CONSTRAINT check_payment_status CHECK ((customerId IS NULL AND trialExpiry IS NOT NULL) OR (customerId IS NOT NULL AND trialExpiry IS NULL) OR (customerId IS NULL AND trialExpiry IS NULL))';
+db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, trialExpiry INTEGER, customerId TEXT, language TEXT, ${payment_status_constraint})`);
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
+const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 
 // Reset Token Table
@@ -165,11 +167,13 @@ wss.on('connection', (ws, req) => {
       switch (msg.t) {
         case "trees":
           console.time("trees");
+          // TODO : Should only be able to modify trees that you own
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
           const usersToNotify = msg.d.map(tree => tree.owner);
           for (const [otherWs, userId] of wsToUser) {
             if (usersToNotify.includes(userId) && otherWs !== ws) {
+              console.log('also sending via notification')
               otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
             }
           }
@@ -178,6 +182,7 @@ wss.on('connection', (ws, req) => {
 
         case 'pull':
           console.time('pull');
+          // TODO : Should only be able to pull trees that you own (or are shared with)
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
@@ -189,6 +194,7 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'push':
+          // No need for permissions check, as the conflict resolution will take care of it
           console.time('push');
           let conflictExists = false;
           const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
@@ -229,6 +235,7 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'pullHistoryMeta': {
+          // TODO : Should only be able to pull history meta that you own (or are shared with)
           console.time('pullHistoryMeta');
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
@@ -243,8 +250,9 @@ wss.on('connection', (ws, req) => {
         }
 
         case 'pullHistory': {
-          const treeId = msg.d;
+          // TODO : Should only be able to pull history that you own (or are shared with)
           console.time('pullHistory');
+          const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const expandedHistory = expand(history);
           const historyData = _.chain(expandedHistory)
@@ -253,15 +261,20 @@ wss.on('connection', (ws, req) => {
             .values()
             .value();
           ws.send(JSON.stringify({t: 'history', d: historyData, tr: treeId}));
+          console.timeEnd('pullHistory');
           break;
         }
 
-        case 'snapshot-test':
-          console.time('snapshot-test');
-          const snapshots = getSnapshots.all(msg.d);
-          const testDiff = compact(snapshots);
-          compactAll(testDiff);
-          console.timeEnd('snapshot-test');
+        case 'saveUserSetting':
+          console.time('saveUserSetting');
+          const [key, val] = msg.d;
+          switch (key) {
+            case 'language':
+              userSetLanguage.run(val, userId);
+              ws.send(JSON.stringify({t: 'saveUserSettingOk', d: msg.d}));
+              break;
+          }
+          console.timeEnd('saveUserSetting');
           break;
       }
     } catch (e) {
