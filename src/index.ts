@@ -46,7 +46,7 @@ db.pragma('synchronous = NORMAL');
 const payment_status_constraint = 'CONSTRAINT check_payment_status CHECK ((customerId IS NULL AND trialExpiry IS NOT NULL) OR (customerId IS NOT NULL AND trialExpiry IS NULL) OR (customerId IS NULL AND trialExpiry IS NULL))';
 db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, trialExpiry INTEGER, customerId TEXT, language TEXT, ${payment_status_constraint})`);
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
-const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt) VALUES (?, ?, ?, ?)');
+const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, trialExpiry, language) VALUES (?, ?, ?, ?, ?, ?)');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
@@ -265,16 +265,11 @@ wss.on('connection', (ws, req) => {
           break;
         }
 
-        case 'saveUserSetting':
-          console.time('saveUserSetting');
-          const [key, val] = msg.d;
-          switch (key) {
-            case 'language':
-              userSetLanguage.run(val, userId);
-              ws.send(JSON.stringify({t: 'saveUserSettingOk', d: msg.d}));
-              break;
-          }
-          console.timeEnd('saveUserSetting');
+        case 'setLanguage':
+          console.time('setLanguage');
+          userSetLanguage.run(msg.d, userId);
+          ws.send(JSON.stringify({t: 'setLanguageOk', d: msg.d}));
+          console.timeEnd('setLanguage');
           break;
       }
     } catch (e) {
@@ -332,13 +327,14 @@ app.post('/signup', async (req, res) => {
   const password = req.body.password;
   let didSubscribe = req.body.subscribed;
   let userDbName = `userdb-${toHex(email)}`;
-  let timestamp = Date.now();
-  let confirmTime = didSubscribe ? null : timestamp;
+  const timestamp = Date.now();
+  const confirmTime = didSubscribe ? null : timestamp;
+  const trialExpiry = timestamp + 14*24*3600*1000;
 
   const salt = crypto.randomBytes(16).toString('hex');
   let hash = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest).toString(encoding);
   try {
-    userSignup.run(email, salt, hash, timestamp);
+    userSignup.run(email, salt, hash, timestamp, trialExpiry, "en");
 
     if (email !== "cypress@testing.com" && didSubscribe) {
       try {
@@ -380,14 +376,10 @@ app.post('/signup', async (req, res) => {
           return userDb.insert(designDocList).catch(retry);
         }, {minTimeout: 100});
 
-        let settings = defaultSettings(email, "en", timestamp, 14, confirmTime);
-        let settingsRes = await userDb.insert(settings);
-        settings["rev"] = settingsRes.rev;
-
         //@ts-ignore
         await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
 
-        let data = {email: email, db: userDbName, settings: settings};
+        let data = {email: email, db: userDbName, settings: {"language": "en"}};
 
         res.status(200).send(data);
       })
@@ -406,7 +398,6 @@ app.post('/signup', async (req, res) => {
 app.post('/login', async (req, res) => {
   let email = req.body.email.toLowerCase();
   let password = req.body.password;
-  let userDbName = `userdb-${toHex(email)}`;
 
   // Check SQLite DB for user and password
   let user = userByEmail.get(email);
@@ -417,7 +408,7 @@ app.post('/login', async (req, res) => {
         if (derivedKey.toString(encoding) === user.password) {
           // Authentication successful
           try {
-            doLogin(req, res, email, userDbName);
+            doLogin(req, res, user);
           } catch (loginErr) {
             console.log(loginErr);
           }
@@ -431,19 +422,17 @@ app.post('/login', async (req, res) => {
   }
 });
 
-function doLogin(req, res, email, userDbName) {
+function doLogin(req, res, user) {
   req.session.regenerate(function(err) {
     if(err) { console.log(err); }
 
-    req.session.user = email;
+    req.session.user = user.id;
 
     req.session.save(async (err) => {
       if(err) { console.log(err); }
 
-      let userDb = nano.use(userDbName);
-      let settings = await userDb.get('settings').catch(e => {console.error(e); return null});
-      let docListRes = await userDb.view('testDocList','docList').catch(r => {return {rows: []};});
-      let data = { email: email, settings: settings, documents: docListRes.rows.map(r=> r.value) };
+      let data = _.omit(user, ['id', 'email', 'password', 'salt']);
+      data.email = user.id;
 
       res.status(200).send(data);
     })
@@ -503,7 +492,7 @@ app.post('/reset-password', async (req, res) => {
             const salt = crypto.randomBytes(16).toString('hex');
             let hash = crypto.pbkdf2Sync(newPassword, salt, iterations, keylen, digest).toString(encoding);
             userChangePassword.run(salt, hash, user.id);
-            doLogin(req, res, user.id, `userdb-${toHex(user.id)}`);
+            doLogin(req, res, user.id);
         } else {
             res.status(404).send();
         }
