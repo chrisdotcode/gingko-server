@@ -43,12 +43,12 @@ db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = NORMAL');
 
 // Users Table
-const payment_status_constraint = 'CONSTRAINT check_payment_status CHECK ((customerId IS NULL AND trialExpiry IS NOT NULL) OR (customerId IS NOT NULL AND trialExpiry IS NULL) OR (customerId IS NULL AND trialExpiry IS NULL))';
-db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, trialExpiry INTEGER, customerId TEXT, language TEXT, ${payment_status_constraint})`);
+db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, paymentStatus TEXT, language TEXT)`);
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, trialExpiry, language) VALUES (?, ?, ?, ?, ?, ?)');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
+const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 
 // Reset Token Table
@@ -156,6 +156,12 @@ const wsToUser = new Map();
 wss.on('connection', (ws, req) => {
   const userId = req.session.user;
   wsToUser.set(ws, userId);
+
+  const userDataUnsafe = userByEmail.get(userId);
+  if (userDataUnsafe && userDataUnsafe.paymentStatus) {
+    const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+    ws.send(JSON.stringify({t: "user", d: userData}));
+  }
 
   console.time("trees load");
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
@@ -614,6 +620,7 @@ app.post('/hooks', async (req, res) => {
       // Get data from event
       let email = event.data.object.customer_email;
       let custId = event.data.object.customer;
+      userSetPaymentStatus.run("customer:" + custId, email);
 
       // Get user's database
       let userDbName = `userdb-${toHex(email)}`;
