@@ -268,7 +268,7 @@ wss.on('connection', (ws, req) => {
         case 'setLanguage':
           console.time('setLanguage');
           userSetLanguage.run(msg.d, userId);
-          ws.send(JSON.stringify({t: 'setLanguageOk', d: msg.d}));
+          ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
           console.timeEnd('setLanguage');
           break;
       }
