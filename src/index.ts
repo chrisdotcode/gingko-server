@@ -506,6 +506,8 @@ app.post('/reset-password', async (req, res) => {
         } else {
             res.status(404).send();
         }
+    } else {
+      res.status(404).send();
     }
 
     // Whether the token is expired or not, delete it from the database
