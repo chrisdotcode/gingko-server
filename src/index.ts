@@ -43,9 +43,10 @@ db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = NORMAL');
 
 // Users Table
-db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, paymentStatus TEXT, language TEXT)`);
+db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, paymentStatus TEXT, language TEXT)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
-const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, trialExpiry, language) VALUES (?, ?, ?, ?, ?, ?)');
+const userByRowId = db.prepare('SELECT * FROM users WHERE rowid = ?');
+const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, paymentStatus, language) VALUES (?, ?, ?, ?, ?, ?)');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHERE id = ?');
@@ -340,7 +341,8 @@ app.post('/signup', async (req, res) => {
   const salt = crypto.randomBytes(16).toString('hex');
   let hash = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest).toString(encoding);
   try {
-    userSignup.run(email, salt, hash, timestamp, trialExpiry, "en");
+    let userInsertInfo = userSignup.run(email, salt, hash, timestamp, "trial:" + trialExpiry, "en");
+    const user = userByRowId.get(userInsertInfo.lastInsertRowid);
 
     if (email !== "cypress@testing.com" && didSubscribe) {
       try {
@@ -385,7 +387,8 @@ app.post('/signup', async (req, res) => {
         //@ts-ignore
         await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
 
-        let data = {email: email, db: userDbName, settings: {"language": "en"}};
+        let data = _.omit(user, ['id', 'email', 'password', 'salt']);
+        data.email = user.id;
 
         res.status(200).send(data);
       })
@@ -498,7 +501,8 @@ app.post('/reset-password', async (req, res) => {
             const salt = crypto.randomBytes(16).toString('hex');
             let hash = crypto.pbkdf2Sync(newPassword, salt, iterations, keylen, digest).toString(encoding);
             userChangePassword.run(salt, hash, user.id);
-            doLogin(req, res, user.id);
+            const updatedUser = userByEmail.get(tokenRow.email);
+            doLogin(req, res, updatedUser);
         } else {
             res.status(404).send();
         }
