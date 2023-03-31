@@ -15,7 +15,7 @@ import proxy from "express-http-proxy";
 import session from "express-session";
 import redisConnect from 'connect-redis';
 import cookieParser from "cookie-parser";
-import WebSocket, { WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
 import axios from "axios";
 import sgMail from "@sendgrid/mail";
 import config from "../config.js";
@@ -47,6 +47,7 @@ db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, passw
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userByRowId = db.prepare('SELECT * FROM users WHERE rowid = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, paymentStatus, language) VALUES (?, ?, ?, ?, ?, ?)');
+const userConfirm = db.prepare('UPDATE users SET confirmedAt = ? WHERE id = ?');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHERE id = ?');
@@ -153,10 +154,18 @@ app.use(session({
 
 const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
+const userToWs = new Map();
 
 wss.on('connection', (ws, req) => {
   const userId = req.session.user;
   wsToUser.set(ws, userId);
+
+  // Add ws to user's entry in userToWs
+  if (userToWs.has(userId)) {
+    userToWs.get(userId).add(ws);
+  } else {
+    userToWs.set(userId, new Set([ws]));
+  }
 
   const userDataUnsafe = userByEmail.get(userId);
   if (userDataUnsafe && userDataUnsafe.paymentStatus) {
@@ -286,6 +295,14 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     wsToUser.delete(ws);
+
+    const userWsSet = userToWs.get(userId);
+    if (userWsSet) {
+      userWsSet.delete(ws);
+      if (userWsSet.size === 0) {
+        userToWs.delete(userId);
+      }
+    }
   });
 });
 
@@ -732,6 +749,22 @@ app.post('/test/trees', async (req, res) => {
   const trees = req.body;
   try {
     upsertMany(trees);
+    res.status(200).send();
+  } catch (err) {
+    console.log(err);
+    res.status(500).send(err);
+  }
+});
+
+app.post('/test/confirm', async (req, res) => {
+  try {
+    userConfirm.run(Date.now(), "cypress@testing.com");
+    const userDataUnsafe = userByEmail.get("cypress@testing.com");
+    const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+
+    userToWs.get("cypress@testing.com").forEach(ws => {
+      ws.send(JSON.stringify({ t: "user", d: userData}));
+    });
     res.status(200).send();
   } catch (err) {
     console.log(err);
