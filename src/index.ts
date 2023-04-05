@@ -457,8 +457,10 @@ function doLogin(req, res, user) {
     req.session.save(async (err) => {
       if(err) { console.log(err); }
 
+      const userTrees = treesByOwner.all(user.id);
       let data = _.omit(user, ['id', 'email', 'password', 'salt']);
       data.email = user.id;
+      data.documents = userTrees;
 
       res.status(200).send(data);
     })
