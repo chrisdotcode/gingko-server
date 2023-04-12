@@ -1,6 +1,6 @@
-const configReference = require("./config-example.js");
-const config = require("./config.js");
-const process = require("process");
+import configReference from "./config-example.js";
+import config from "./config.js";
+import process from "process";
 
 let confRefKeys = Object.keys(configReference).sort();
 let confKeys = Object.keys(config).sort();
