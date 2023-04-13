@@ -173,31 +173,31 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({t: "user", d: userData}));
   }
 
-  console.time("trees load");
+  //console.time("trees load");
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
-  console.timeEnd("trees load");
+  //console.timeEnd("trees load");
 
   ws.on('message', function incoming(message) {
     try {
       const msg = JSON.parse(message);
       switch (msg.t) {
         case "trees":
-          console.time("trees");
+          //console.time("trees");
           // TODO : Should only be able to modify trees that you own
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
           const usersToNotify = msg.d.map(tree => tree.owner);
           for (const [otherWs, userId] of wsToUser) {
             if (usersToNotify.includes(userId) && otherWs !== ws) {
-              console.log('also sending via notification')
+              //console.log('also sending via notification')
               otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
             }
           }
-          console.timeEnd("trees");
+          //console.timeEnd("trees");
           break;
 
         case 'pull':
-          console.time('pull');
+          //console.time('pull');
           // TODO : Should only be able to pull trees that you own (or are shared with)
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
@@ -206,12 +206,12 @@ wss.on('connection', (ws, req) => {
             const cards = cardsSince.all(msg.d[0], msg.d[1]);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           }
-          console.timeEnd('pull');
+          //console.timeEnd('pull');
           break;
 
         case 'push':
           // No need for permissions check, as the conflict resolution will take care of it
-          console.time('push');
+          //console.time('push');
           let conflictExists = false;
           const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
           const treeId = msg.d.tr;
@@ -247,12 +247,12 @@ wss.on('connection', (ws, req) => {
               }
             }
           }
-          console.timeEnd('push');
+          //console.timeEnd('push');
           break;
 
         case 'pullHistoryMeta': {
           // TODO : Should only be able to pull history meta that you own (or are shared with)
-          console.time('pullHistoryMeta');
+          //console.time('pullHistoryMeta');
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const historyMeta = _.chain(history)
@@ -261,13 +261,13 @@ wss.on('connection', (ws, req) => {
             .values()
             .value();
           ws.send(JSON.stringify({t: 'historyMeta', d: historyMeta, tr: treeId}));
-          console.timeEnd('pullHistoryMeta');
+          //console.timeEnd('pullHistoryMeta');
           break;
         }
 
         case 'pullHistory': {
           // TODO : Should only be able to pull history that you own (or are shared with)
-          console.time('pullHistory');
+          //console.time('pullHistory');
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const expandedHistory = expand(history);
@@ -277,15 +277,15 @@ wss.on('connection', (ws, req) => {
             .values()
             .value();
           ws.send(JSON.stringify({t: 'history', d: historyData, tr: treeId}));
-          console.timeEnd('pullHistory');
+          //console.timeEnd('pullHistory');
           break;
         }
 
         case 'setLanguage':
-          console.time('setLanguage');
+          //console.time('setLanguage');
           userSetLanguage.run(msg.d, userId);
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
-          console.timeEnd('setLanguage');
+          //console.timeEnd('setLanguage');
           break;
       }
     } catch (e) {
@@ -307,7 +307,7 @@ wss.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', async (request, socket, head) => {
-  console.log('ws connection requested');
+  //console.log('ws connection requested');
   const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
   const sessionId = sessionCookie.split('=')[1];
   const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
@@ -328,7 +328,7 @@ server.on('upgrade', async (request, socket, head) => {
     if (session.user) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         request.session = session;
-        console.log('ws connection accepted');
+        //console.log('ws connection accepted');
         wss.emit('connection', ws, request);
       });
     } else {
