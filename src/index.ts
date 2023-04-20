@@ -513,6 +513,11 @@ app.post('/reset-password', async (req, res) => {
 
   try {
     let tokenRow = resetToken.get(hashToken(token));
+    if (!tokenRow) {
+      res.status(404).send();
+      return;
+    }
+
     let timeElapsed = Date.now() - tokenRow.createdAt;
     if (timeElapsed < 3600000) {
         let user = userByEmail.get(tokenRow.email);
