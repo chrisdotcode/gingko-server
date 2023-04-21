@@ -81,6 +81,7 @@ const cardUpdate = db.prepare('UPDATE cards SET updatedAt = ?, content = ? WHERE
 const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, position = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
+const deleteTestUserCards = db.prepare("DELETE FROM cards WHERE treeId IN (SELECT id FROM trees WHERE owner ='cypress@testing.com')");
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
@@ -742,9 +743,9 @@ app.delete('/test/user', async (req, res) => {
 
   try {
     await nano.db.destroy(userDbName).catch(e => null);
-    deleteTestUser.run();
+    deleteTestUserCards.run();
     deleteTestUserTrees.run();
-    userByEmail.run("cypress@testing.com");
+    deleteTestUser.run();
     res.status(200).send();
   } catch (err) {
     console.log(err);
