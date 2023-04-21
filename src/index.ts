@@ -653,23 +653,15 @@ app.post('/hooks', async (req, res) => {
       let custId = event.data.object.customer;
       userSetPaymentStatus.run("customer:" + custId, email);
 
-      // Get user's database
-      let userDbName = `userdb-${toHex(email)}`;
-      let userDb = nano.use(userDbName);
+      const userDataUnsafe = userByEmail.get("cypress@testing.com");
+      const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+      const userWebSockets = userToWs.get("cypress@testing.com");
 
-      // Update user's settings
-      let settings = {} as SettingsDoc;
-      try {
-        // @ts-ignore
-        settings = await userDb.get('settings');
-      } catch (err) {
-        if (err.error === "not_found") {
-          settings = defaultSettings(email, "en", Date.now(), 14);
-        }
-        console.log(err)
+      if (userWebSockets) {
+        userWebSockets.forEach(ws => {
+          ws.send(JSON.stringify({ t: "user", d: userData}));
+        })
       }
-      settings.paymentStatus = { customer: custId };
-      let dbSaveRes = await userDb.insert(settings);
       break;
     // ... handle other event types
     default:
@@ -769,10 +761,10 @@ app.post('/test/confirm', async (req, res) => {
     userConfirm.run(Date.now(), "cypress@testing.com");
     const userDataUnsafe = userByEmail.get("cypress@testing.com");
     const userData = _.omit(userDataUnsafe, ['salt', 'password']);
-    const userWs = userToWs.get("cypress@testing.com");
+    const userWebSockets = userToWs.get("cypress@testing.com");
 
-    if (userWs) {
-      userWs.forEach(ws => {
+    if (userWebSockets) {
+      userWebSockets.forEach(ws => {
         ws.send(JSON.stringify({ t: "user", d: userData}));
       })
     }
