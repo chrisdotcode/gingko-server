@@ -768,10 +768,13 @@ app.post('/test/confirm', async (req, res) => {
     userConfirm.run(Date.now(), "cypress@testing.com");
     const userDataUnsafe = userByEmail.get("cypress@testing.com");
     const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+    const userWs = userToWs.get("cypress@testing.com");
 
-    userToWs.get("cypress@testing.com").forEach(ws => {
-      ws.send(JSON.stringify({ t: "user", d: userData}));
-    });
+    if (userWs) {
+      userWs.forEach(ws => {
+        ws.send(JSON.stringify({ t: "user", d: userData}));
+      })
+    }
     res.status(200).send();
   } catch (err) {
     console.log(err);
