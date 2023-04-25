@@ -308,7 +308,11 @@ wss.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', async (request, socket, head) => {
-  //console.log('ws connection requested');
+  if (!request.headers.cookie) {
+    console.error('no cookie', request);
+    socket.destroy();
+    return;
+  }
   const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
   const sessionId = sessionCookie.split('=')[1];
   const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
