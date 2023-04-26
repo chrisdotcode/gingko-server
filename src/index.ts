@@ -679,19 +679,16 @@ app.post('/hooks', async (req, res) => {
 
 /* ==== Mail confirmation ==== */
 
-let confirmedHandler = async (email, date) => {
-  // Posix time
-  let timestamp = Date.parse(date);
+let confirmedHandler = (email) => {
+  userConfirm.run(Date.now(), email);
+  const userDataUnsafe = userByEmail.get(email);
+  const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+  const userWebSockets = userToWs.get(email);
 
-  // get user settings object
-  let userDbName = `userdb-${toHex(email)}`;
-  let userDb = nano.use(userDbName);
-  let settings = await userDb.get('settings').catch(e => null);
-
-  if (settings !== null) {
-    settings.confirmedAt = timestamp;
-
-    return userDb.insert(settings);
+  if (userWebSockets) {
+    userWebSockets.forEach(ws => {
+      ws.send(JSON.stringify({ t: "user", d: userData}));
+    })
   }
 };
 
@@ -702,13 +699,11 @@ app.post('/mlhooks', async (req, res) => {
   // Handle the events
   let subscribers = events.map(x => x.data.subscriber);
 
-  let confirmPromises = subscribers.filter(s => s.confirmation_timestamp).map(s => {
+  subscribers.filter(s => s.confirmation_timestamp).map(s => {
     if (s.confirmation_timestamp) {
-      confirmedHandler(s.email, s.confirmation_timestamp);
+      confirmedHandler(s.email);
     }
   });
-
-  await Promise.all(confirmPromises);
 
   // Return a res to acknowledge receipt of the event
   res.json({received: true});
@@ -762,16 +757,7 @@ app.post('/test/trees', async (req, res) => {
 
 app.post('/test/confirm', async (req, res) => {
   try {
-    userConfirm.run(Date.now(), "cypress@testing.com");
-    const userDataUnsafe = userByEmail.get("cypress@testing.com");
-    const userData = _.omit(userDataUnsafe, ['salt', 'password']);
-    const userWebSockets = userToWs.get("cypress@testing.com");
-
-    if (userWebSockets) {
-      userWebSockets.forEach(ws => {
-        ws.send(JSON.stringify({ t: "user", d: userData}));
-      })
-    }
+    confirmedHandler("cypress@testing.com")
     res.status(200).send();
   } catch (err) {
     console.log(err);
