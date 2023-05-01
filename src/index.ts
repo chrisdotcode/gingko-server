@@ -85,7 +85,14 @@ const deleteTestUserCards = db.prepare("DELETE FROM cards WHERE treeId IN (SELEC
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
-const takeSnapshotSQL = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) SELECT (1000*unixepoch()) || \':\' || treeId, treeId, id, content, parentId, position, updatedAt, 0 FROM cards WHERE treeId = ? AND deleted != 1');
+const takeSnapshotSQL = db.prepare(`
+INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta)
+SELECT
+ (SELECT substr(updatedAt, 1, instr(updatedAt, ':') - 1) as updatedAtTime 
+  FROM cards WHERE treeId = @treeId AND deleted != 1 ORDER BY updatedAtTime DESC LIMIT 1
+ ) || \':\' || treeId, treeId, id, content, parentId, position, updatedAt, 0
+FROM cards WHERE treeId = @treeId AND deleted != 1
+`);
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
@@ -108,7 +115,7 @@ _.mixin({
 });
 //@ts-ignore
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
-    takeSnapshotSQL.run(treeId);
+    takeSnapshotSQL.run({treeId});
 } , 5 * 1 * 1000 /* 5 seconds */
   , { maxWait: 25 * 1 * 1000 /* 25 seconds */ }
 );
@@ -236,6 +243,7 @@ wss.on('connection', (ws, req) => {
 
           if (conflictExists) {
             const cards = cardsSince.all(msg.d.tr, msg.d.chk);
+            console.log('conflict exists, sending cards', cards.map(c => c.id))
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           } else {
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
@@ -828,7 +836,7 @@ function runIns(ts, treeId, userId, id, ins )  {
     cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
     //console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
   } else {
-    throw new Error('Ins Conflict : Parent not present');
+    throw new Error(`Ins Conflict : Parent ${ins.p} not present`);
   }
 }
 
