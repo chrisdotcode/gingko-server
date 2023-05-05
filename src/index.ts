@@ -46,7 +46,7 @@ db.pragma('synchronous = NORMAL');
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, paymentStatus TEXT, language TEXT)');
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userByRowId = db.prepare('SELECT * FROM users WHERE rowid = ?');
-const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, paymentStatus, language) VALUES (?, ?, ?, ?, ?, ?)');
+const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, confirmedAt, paymentStatus, language) VALUES (?, ?, ?, ?, ?, ?, ?)');
 const userConfirm = db.prepare('UPDATE users SET confirmedAt = ? WHERE id = ?');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
@@ -371,7 +371,7 @@ app.post('/signup', async (req, res) => {
   const salt = crypto.randomBytes(16).toString('hex');
   let hash = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest).toString(encoding);
   try {
-    let userInsertInfo = userSignup.run(email, salt, hash, timestamp, "trial:" + trialExpiry, "en");
+    let userInsertInfo = userSignup.run(email, salt, hash, timestamp, confirmTime, "trial:" + trialExpiry, "en");
     const user = userByRowId.get(userInsertInfo.lastInsertRowid);
 
     if (email !== "cypress@testing.com" && didSubscribe) {
