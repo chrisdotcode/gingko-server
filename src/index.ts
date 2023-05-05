@@ -316,37 +316,37 @@ wss.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', async (request, socket, head) => {
-  if (!request.headers.cookie) {
-    console.error('no cookie', request);
-    socket.destroy();
-    return;
-  }
-  const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
-  const sessionId = sessionCookie.split('=')[1];
-  const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
-  if (signedCookie === false) {
-    socket.destroy();
-  } else {
-    const session = await new Promise((resolve, reject) => {
-      // @ts-ignore
-      redis.get(`sess:${signedCookie}`, (err, data) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(JSON.parse(data));
-        }
-      });
-    });
-    // @ts-ignore
-    if (session.user) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        request.session = session;
-        //console.log('ws connection accepted');
-        wss.emit('connection', ws, request);
-      });
-    } else {
+  try {
+    const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
+    const sessionId = sessionCookie.split('=')[1];
+    const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
+    if (signedCookie === false) {
       socket.destroy();
+    } else {
+      const session = await new Promise((resolve, reject) => {
+        // @ts-ignore
+        redis.get(`sess:${signedCookie}`, (err, data) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(JSON.parse(data));
+          }
+        });
+      });
+      // @ts-ignore
+      if (session.user) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          request.session = session;
+          //console.log('ws connection accepted');
+          wss.emit('connection', ws, request);
+        });
+      } else {
+        socket.destroy();
+      }
     }
+  } catch (e) {
+    console.error(e);
+    socket.destroy();
   }
 });
 
