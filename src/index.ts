@@ -17,7 +17,7 @@ import redisConnect from 'connect-redis';
 import cookieParser from "cookie-parser";
 import { WebSocketServer } from "ws";
 import axios from "axios";
-import sgMail from "@sendgrid/mail";
+import sgMail, {send} from "@sendgrid/mail";
 import config from "../config.js";
 import Stripe from 'stripe';
 
@@ -52,6 +52,7 @@ const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? W
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHERE id = ?');
 const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
+const expireTestUser = db.prepare("UPDATE users SET paymentStatus='trial:' || CAST(1000*(unixepoch() - 2*24*60*60) AS TEXT) WHERE id = 'cypress@testing.com'");
 
 // Reset Token Table
 db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
@@ -664,16 +665,7 @@ app.post('/hooks', async (req, res) => {
       let email = event.data.object.customer_email;
       let custId = event.data.object.customer;
       userSetPaymentStatus.run("customer:" + custId, email);
-
-      const userDataUnsafe = userByEmail.get(email);
-      const userData = _.omit(userDataUnsafe, ['salt', 'password']);
-      const userWebSockets = userToWs.get(email);
-
-      if (userWebSockets) {
-        userWebSockets.forEach(ws => {
-          ws.send(JSON.stringify({ t: "user", d: userData}));
-        })
-      }
+      sendUpdatedUserData(email);
       break;
     // ... handle other event types
     default:
@@ -689,15 +681,7 @@ app.post('/hooks', async (req, res) => {
 
 let confirmedHandler = (email) => {
   userConfirm.run(Date.now(), email);
-  const userDataUnsafe = userByEmail.get(email);
-  const userData = _.omit(userDataUnsafe, ['salt', 'password']);
-  const userWebSockets = userToWs.get(email);
-
-  if (userWebSockets) {
-    userWebSockets.forEach(ws => {
-      ws.send(JSON.stringify({ t: "user", d: userData}));
-    })
-  }
+  sendUpdatedUserData(email);
 };
 
 app.post('/mlhooks', async (req, res) => {
@@ -745,6 +729,17 @@ app.delete('/test/user', async (req, res) => {
     deleteTestUserCards.run();
     deleteTestUserTrees.run();
     deleteTestUser.run();
+    res.status(200).send();
+  } catch (err) {
+    console.log(err);
+    res.status(500).send(err);
+  }
+});
+
+app.post('/test/expired', async (req, res) => {
+  try {
+    expireTestUser.run();
+    sendUpdatedUserData("cypress@testing.com");
     res.status(200).send();
   } catch (err) {
     console.log(err);
@@ -904,6 +899,17 @@ function isAncestor(cardId , targetParentId ) {
 
 /* === HELPERS === */
 
+function sendUpdatedUserData(email) {
+  const userDataUnsafe = userByEmail.get(email);
+  const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+  const userWebSockets = userToWs.get(email);
+
+  if (userWebSockets) {
+    userWebSockets.forEach(ws => {
+      ws.send(JSON.stringify({ t: "user", d: userData}));
+    })
+  }
+}
 
 const designDocList =
   {
