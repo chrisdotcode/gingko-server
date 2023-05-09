@@ -665,9 +665,9 @@ app.post('/hooks', async (req, res) => {
       let custId = event.data.object.customer;
       userSetPaymentStatus.run("customer:" + custId, email);
 
-      const userDataUnsafe = userByEmail.get("cypress@testing.com");
+      const userDataUnsafe = userByEmail.get(email);
       const userData = _.omit(userDataUnsafe, ['salt', 'password']);
-      const userWebSockets = userToWs.get("cypress@testing.com");
+      const userWebSockets = userToWs.get(email);
 
       if (userWebSockets) {
         userWebSockets.forEach(ws => {
