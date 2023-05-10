@@ -221,7 +221,8 @@ wss.on('connection', (ws, req) => {
           // No need for permissions check, as the conflict resolution will take care of it
           //console.time('push');
           let conflictExists = false;
-          const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
+          const lastTs = msg.d.dlts.sort((a, b) => a.ts - b.ts)[0].ts;
+          debug('push recvd ts: ', lastTs)
           const treeId = msg.d.tr;
 
           // Note : If I'm not generating any hybrid logical clock values,
