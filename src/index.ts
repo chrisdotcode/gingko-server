@@ -51,7 +51,6 @@ const userConfirm = db.prepare('UPDATE users SET confirmedAt = ? WHERE id = ?');
 const userChangePassword = db.prepare('UPDATE users SET salt = ?, password = ? WHERE id = ?');
 const userSetLanguage = db.prepare('UPDATE users SET language = ? WHERE id = ?');
 const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHERE id = ?');
-const deleteTestUser = db.prepare("DELETE FROM users WHERE id = 'cypress@testing.com'");
 const expireTestUser = db.prepare("UPDATE users SET paymentStatus='trial:' || CAST(1000*(unixepoch() - 2*24*60*60) AS TEXT) WHERE id = 'cypress@testing.com'");
 
 // Reset Token Table
@@ -62,7 +61,6 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 
 // Trees Table
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
-const deleteTestUserTrees = db.prepare("DELETE FROM trees WHERE owner = 'cypress@testing.com'");
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -82,7 +80,6 @@ const cardUpdate = db.prepare('UPDATE cards SET updatedAt = ?, content = ? WHERE
 const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, position = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
-const deleteTestUserCards = db.prepare("DELETE FROM cards WHERE treeId IN (SELECT id FROM trees WHERE owner ='cypress@testing.com')");
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
@@ -726,9 +723,6 @@ app.delete('/test/user', async (req, res) => {
 
   try {
     await nano.db.destroy(userDbName).catch(e => null);
-    deleteTestUserCards.run();
-    deleteTestUserTrees.run();
-    deleteTestUser.run();
     res.status(200).send();
   } catch (err) {
     console.log(err);
