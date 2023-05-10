@@ -321,7 +321,7 @@ server.on('upgrade', async (request, socket, head) => {
     if (signedCookie === false) {
       socket.destroy();
     } else {
-      const session = await new Promise((resolve, reject) => {
+      const sessionValue = await new Promise((resolve, reject) => {
         // @ts-ignore
         redis.get(`sess:${signedCookie}`, (err, data) => {
           if (err) {
@@ -332,9 +332,9 @@ server.on('upgrade', async (request, socket, head) => {
         });
       });
       // @ts-ignore
-      if (session.user) {
+      if (sessionValue.user) {
         wss.handleUpgrade(request, socket, head, (ws) => {
-          request.session = session;
+          request.session = sessionValue;
           //console.log('ws connection accepted');
           wss.emit('connection', ws, request);
         });
@@ -613,7 +613,7 @@ app.post('/create-checkout-session', async (req, res) => {
 
   try {
     // @ts-ignore : docs say to remove 'payment_method_types' but typescript complains
-    const session = await stripe.checkout.sessions.create({
+    const stripeSession = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [
         {
@@ -628,7 +628,7 @@ app.post('/create-checkout-session', async (req, res) => {
     });
 
     res.send({
-      sessionId: session.id,
+      sessionId: stripeSession.id,
     });
   } catch (e) {
     res.status(400);
@@ -644,11 +644,11 @@ app.post('/create-checkout-session', async (req, res) => {
 app.post('/create-portal-session', async (req, res) => {
   const { customer_id } = req.body;
 
-  const session = await stripe.billingPortal.sessions.create({
+  const stripeSession = await stripe.billingPortal.sessions.create({
     customer: customer_id
   });
 
-  res.redirect(session.url);
+  res.redirect(stripeSession.url);
 });
 
 
