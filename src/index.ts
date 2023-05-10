@@ -29,6 +29,8 @@ import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
+import Debug from "debug";
+const debug = Debug('cards');
 
 
 
@@ -236,7 +238,7 @@ wss.on('connection', (ws, req) => {
             takeSnapshotDebounced(treeId);
           } catch (e) {
             conflictExists = true; // TODO : Check if this is the right error
-            console.log(e.message);
+            debug(e.message)
           }
 
           if (conflictExists) {
@@ -823,8 +825,9 @@ function runIns(ts, treeId, userId, id, ins )  {
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
     cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
-    //console.log(`Inserted card ${id} at ${ins.p} with ${ins.c}`);
+    debug(`${ts}: Inserted card ${id} at ${ins.p} with ${JSON.stringify(ins.c.slice(0, 20))}`);
   } else {
+    debug(`Ins Conflict : Parent ${ins.p} not present`);
     throw new Error(`Ins Conflict : Parent ${ins.p} not present`);
   }
 }
@@ -833,7 +836,7 @@ function runUpd(ts, id, upd )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
     cardUpdate.run(ts, upd.c, id);
-    //console.log('Updated card ', id, ' to ', JSON.stringify(upd.c));
+    debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c)}`);
   } else if (card == null) {
     throw new Error(`Upd Conflict : Card '${id}' not present.`);
   } else if (card.updatedAt != upd.e) {
@@ -848,7 +851,7 @@ function runMov(ts, id, mov )  {
   const card = cardById.get(id);
   if(card != null && parentPresent && !isAncestor(id, mov.p)) {
     cardMove.run(ts, mov.p, mov.pos, id);
-    //console.log('Moved card ', id, ' to ', mov.p, ' at ', mov.pos);
+    debug(`${ts}: Moved card ${id} to ${mov.p} at ${mov.pos}`);
   } else {
     throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
   }
@@ -858,7 +861,7 @@ function runDel(ts, id, del )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == del.e) {
     cardDelete.run(ts, id);
-    //console.log('Deleted card ' + id);
+    debug(`${ts}: Deleted card ${id}`);
   } else if (card == null) {
     throw new Error(`Del Conflict : Card '${id}' not present`);
   } else if (card.updatedAt != del.e) {
@@ -873,7 +876,7 @@ function runUndel(ts, id)  {
   if (info.changes == 0) {
     throw new Error('Undel Conflict : Card not present');
   }
-  //console.log('Undeleted card ' + id);
+  debug(`${ts}: Undeleted card ${id}`);
 }
 
 // --- Helpers ---
