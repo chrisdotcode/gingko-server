@@ -244,8 +244,8 @@ wss.on('connection', (ws, req) => {
 
           if (conflictExists) {
             const cards = cardsSince.all(msg.d.tr, msg.d.chk);
-            console.log('conflict exists, sending cards', cards.map(c => c.id))
-            ws.send(JSON.stringify({t: 'cards', d: cards}));
+            debug('conflict cards: ', cards.map(c => c.updatedAt))
+            ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
           } else {
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
 
@@ -837,7 +837,7 @@ function runUpd(ts, id, upd )  {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
     cardUpdate.run(ts, upd.c, id);
-    debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c)}`);
+    debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c.slice(0,20))}`);
   } else if (card == null) {
     throw new Error(`Upd Conflict : Card '${id}' not present.`);
   } else if (card.updatedAt != upd.e) {
