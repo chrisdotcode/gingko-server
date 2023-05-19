@@ -221,7 +221,7 @@ wss.on('connection', (ws, req) => {
           // No need for permissions check, as the conflict resolution will take care of it
           //console.time('push');
           let conflictExists = false;
-          const lastTs = msg.d.dlts.sort((a, b) => a.ts - b.ts)[0].ts;
+          const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
           debug('push recvd ts: ', lastTs)
           const treeId = msg.d.tr;
 
@@ -247,6 +247,7 @@ wss.on('connection', (ws, req) => {
             debug('conflict cards: ', cards.map(c => c.updatedAt))
             ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
           } else {
+            debug('pushOk', lastTs);
             ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
 
             const owner = treeOwner.get(treeId);
@@ -826,7 +827,7 @@ function runIns(ts, treeId, userId, id, ins )  {
   const parentPresent = ins.p == null || cardById.get(ins.p);
   if (parentPresent) {
     cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
-    debug(`${ts}: Inserted card ${id} at ${ins.p} with ${JSON.stringify(ins.c.slice(0, 20))}`);
+    debug(`${ts}: Inserted card ${id.slice(0,10)} at ${ins.p ? ins.p.slice(0,10) : ins.p} with ${JSON.stringify(ins.c.slice(0, 20))}`);
   } else {
     debug(`Ins Conflict : Parent ${ins.p} not present`);
     throw new Error(`Ins Conflict : Parent ${ins.p} not present`);
