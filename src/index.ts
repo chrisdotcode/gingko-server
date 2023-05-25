@@ -142,6 +142,13 @@ const server = app.listen(port, () => console.log(`Example app listening at http
 
 const RedisStore = redisConnect(session);
 const redis = createClient({legacyMode: true});
+const sessionParser = session({
+    store: new RedisStore({ client: redis }),
+    secret: config.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, maxAge: /* 14 days */ 1209600000 }
+});
 redis.connect().catch(console.error);
 
 redis.on("error", function (err) {
@@ -150,13 +157,7 @@ redis.on("error", function (err) {
 redis.on("connect", function () {
   console.log("Redis connected");
 });
-app.use(session({
-    store: new RedisStore({ client: redis }),
-    secret: config.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false, maxAge: /* 14 days */ 1209600000 }
-}));
+app.use(sessionParser);
 
 /* ==== WebSocket ==== */
 
@@ -318,38 +319,21 @@ wss.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', async (request, socket, head) => {
-  try {
-    const sessionCookie = request.headers.cookie.split(';').find(row => row.trim().startsWith('connect.sid='));
-    const sessionId = sessionCookie.split('=')[1];
-    const signedCookie = cookieParser.signedCookie(decodeURIComponent(sessionId), config.SESSION_SECRET);
-    if (signedCookie === false) {
+  sessionParser(request, {}, (err) => {
+    if (err) {
+      console.error('Session retrieval error:', err);
       socket.destroy();
-    } else {
-      const sessionValue = await new Promise((resolve, reject) => {
-        // @ts-ignore
-        redis.get(`sess:${signedCookie}`, (err, data) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(JSON.parse(data));
-          }
-        });
-      });
-      // @ts-ignore
-      if (sessionValue.user) {
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          request.session = sessionValue;
-          //console.log('ws connection accepted');
-          wss.emit('connection', ws, request);
-        });
-      } else {
-        socket.destroy();
-      }
+      return;
     }
-  } catch (e) {
-    console.error(e);
-    socket.destroy();
-  }
+
+    if (request.session.user) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 });
 
 
