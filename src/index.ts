@@ -601,8 +601,8 @@ app.post('/pleasenospam', async (req, res) => {
 
     res.status(201).send();
   } catch (err) {
-    console.log(err.response.body.errors)
-    res.status(err.response.status).send(err.response.data);
+    console.error(err.response.body)
+    res.status(err.code || 400).send(err.response.body);
   }
 });
 
