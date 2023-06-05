@@ -14,17 +14,15 @@ import express from "express";
 import proxy from "express-http-proxy";
 import session from "express-session";
 import redisConnect from 'connect-redis';
-import cookieParser from "cookie-parser";
 import { WebSocketServer } from "ws";
 import axios from "axios";
-import sgMail, {send} from "@sendgrid/mail";
+import sgMail from "@sendgrid/mail";
 import config from "../config.js";
 import Stripe from 'stripe';
 
 // Misc
-import promiseRetry from "promise-retry";
 import _ from "lodash";
-import {compact, expand, SnapshotCompaction} from './snapshots.js';
+import {expand, SnapshotCompaction} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -116,8 +114,8 @@ _.mixin({
 //@ts-ignore
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
     takeSnapshotSQL.run({treeId});
-} , 5 * 1 * 1000 /* 5 seconds */
-  , { maxWait: 25 * 1 * 1000 /* 25 seconds */ }
+} , 5 * 1000 /* 5 seconds */
+  , { maxWait: 25 * 1000 /* 25 seconds */ }
 );
 
 
@@ -152,7 +150,7 @@ const sessionParser = session({
 redis.connect().catch(console.error);
 
 redis.on("error", function (err) {
-  console.log("Redis Error " + err);
+  console.error("Redis Error " + err);
 });
 redis.on("connect", function () {
   console.log("Redis connected");
@@ -241,6 +239,7 @@ wss.on('connection', (ws, req) => {
           } catch (e) {
             conflictExists = true; // TODO : Check if this is the right error
             debug(e.message)
+            console.error(e);
           }
 
           if (conflictExists) {
@@ -381,24 +380,19 @@ app.post('/signup', async (req, res) => {
             };
         axios(options);
       } catch (mailErr) {
-        console.log(mailErr);
+        console.error(mailErr);
       }
     }
 
     req.session.regenerate((err) => {
-      if(err) { console.log(err); }
+      if(err) { console.error(err); }
 
       req.session.user = email;
 
       req.session.save(async (err) => {
-        if(err) { console.log(err); }
+        if(err) { console.error(err); }
 
         await nano.db.create(userDbName);
-        const userDb = nano.use(userDbName);
-
-        await promiseRetry((retry, attempt) => {
-          return userDb.insert(designDocList).catch(retry);
-        }, {minTimeout: 100});
 
         //@ts-ignore
         await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
@@ -411,9 +405,10 @@ app.post('/signup', async (req, res) => {
     })
   } catch (e) {
     if (e.code && e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
+      console.error(e);
       res.status(409).send();
     } else {
-      console.log(e);
+      console.error(e);
       res.status(500).send({error: "Internal server error"});
     }
   }
@@ -435,7 +430,7 @@ app.post('/login', async (req, res) => {
           try {
             doLogin(req, res, user);
           } catch (loginErr) {
-            console.log(loginErr);
+            console.error(loginErr);
           }
         } else {
           res.status(401).send();
@@ -501,6 +496,7 @@ app.post('/forgot-password', async (req, res) => {
     await sgMail.send(msg);
     res.status(200).send({email: email})
   } catch (err) {
+    console.error(err);
     res.status(err.statusCode).send();
   }
 });
@@ -536,7 +532,7 @@ app.post('/reset-password', async (req, res) => {
     // Whether the token is expired or not, delete it from the database
     resetTokenDelete.run(tokenRow.email);
   } catch (err) {
-    console.log(err)
+    console.error(err)
     res.status(err.response.status).send(err.response.data);
   }
 });
@@ -619,6 +615,7 @@ app.post('/create-checkout-session', async (req, res) => {
       sessionId: stripeSession.id,
     });
   } catch (e) {
+    console.error(e);
     res.status(400);
     return res.send({
       error: {
@@ -713,7 +710,7 @@ app.delete('/test/user', async (req, res) => {
     await nano.db.destroy(userDbName).catch(e => null);
     res.status(200).send();
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).send(err);
   }
 });
@@ -724,7 +721,7 @@ app.post('/test/expired', async (req, res) => {
     sendUpdatedUserData("cypress@testing.com");
     res.status(200).send();
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).send(err);
   }
 });
@@ -735,7 +732,7 @@ app.post('/test/trees', async (req, res) => {
     upsertMany(trees);
     res.status(200).send();
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).send(err);
   }
 });
@@ -745,7 +742,7 @@ app.post('/test/confirm', async (req, res) => {
     confirmedHandler("cypress@testing.com")
     res.status(200).send();
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).send(err);
   }
 });
@@ -893,32 +890,6 @@ function sendUpdatedUserData(email) {
     })
   }
 }
-
-const designDocList =
-  {
-    "_id": "_design/testDocList",
-    "views": {
-      "docList": {
-        "map": "function (doc) {\n  if (/metadata/.test(doc._id)) {\n    emit(doc._id, doc);\n  }\n}"
-      }
-    },
-    "language": "javascript"
-  };
-
-interface SettingsDoc {
-    _id: string;
-    email: string;
-    language: string;
-    paymentStatus: {trialExpires: number} | { customer : string };
-    confirmedAt : number;
-}
-
-
-function defaultSettings(email, language = "en", trialStart, trialLength, confirmedTime:number=null) : SettingsDoc {
-  let trialExpires = trialStart + trialLength*24*3600*1000;
-  return {_id: "settings", email, language, paymentStatus: {trialExpires}, confirmedAt: confirmedTime};
-}
-
 
 function toHex(str) {
   return Buffer.from(str).toString('hex');
