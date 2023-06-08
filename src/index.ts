@@ -546,6 +546,8 @@ app.use('/db', proxy('http://127.0.0.1:5984', {
     if (srcReq.session.user) {
       proxyReqOpts.headers['X-Auth-CouchDB-UserName'] = srcReq.session.user;
       proxyReqOpts.headers['X-Auth-CouchDB-Roles'] = '';
+    } else {
+      console.log('No user in session for /db', srcReq.session);
     }
     return proxyReqOpts;
   }
