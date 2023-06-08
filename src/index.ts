@@ -317,6 +317,10 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+wss.on('error', (err) => {
+  console.error(err);
+});
+
 server.on('upgrade', async (request, socket, head) => {
   sessionParser(request, {}, (err) => {
     if (err) {
