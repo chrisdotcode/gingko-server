@@ -170,6 +170,7 @@ const wsToUser = new Map();
 const userToWs = new Map();
 
 wss.on('connection', (ws, req) => {
+  console.log("ws connection", req.session);
   const userId = req.session.user;
   wsToUser.set(ws, userId);
 
