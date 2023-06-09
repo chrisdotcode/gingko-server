@@ -29,6 +29,7 @@ import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
 import Debug from "debug";
 const debug = Debug('cards');
+import morgan from "morgan";
 
 
 
@@ -125,6 +126,11 @@ const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@127.0.0.
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Use morgan to log requests in immediate mode:
+app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version"', {"immediate": true}));
+// Use morgan to log responses separately:
+app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :response-time ms'));
 
 app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({ extended: true }));
@@ -551,7 +557,7 @@ app.use('/db', proxy('http://127.0.0.1:5984', {
       proxyReqOpts.headers['X-Auth-CouchDB-UserName'] = srcReq.session.user;
       proxyReqOpts.headers['X-Auth-CouchDB-Roles'] = '';
     } else {
-      console.log('No user in session for /db', srcReq.session);
+      //console.log('No user in session for /db', srcReq);
     }
     return proxyReqOpts;
   }
