@@ -1,0 +1,52 @@
+name: Web Deploy
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: server
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+      - name: Checkout server
+        uses: actions/checkout@v3
+        with:
+          repository: gingko/server
+          path: server
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Copy server config.js file
+        run: cp $HOME/server.config.js $GITHUB_WORKSPACE/server/config.js
+
+      - name: Check server config.js file
+        run: node $GITHUB_WORKSPACE/server/config-check.js
+
+      - name: Install Test Server Dependencies
+        run: npm i; npx tsc
+
+      - name: Stop Test Server
+        run: "pm2 stop --silent GingkoTest  || :"
+
+      - name: Start Test Server
+        run: NODE_ENV=production DEBUG=cards PORT=8000 pm2 start ../server/dist/index.js --name GingkoTest
+
+      - name: Copy Build Files
+        if: "contains(github.event.head_commit.message, '[server deploy]')"
+        run: |
+          cp -r $GITHUB_WORKSPACE/server/* $HOME/production/server
+
+      - name: Restart Production Server
+        if: "contains(github.event.head_commit.message, '[server deploy]')"
+        run: pm2 restart GingkoProductionNew
