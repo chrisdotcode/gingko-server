@@ -332,16 +332,19 @@ server.on('upgrade', async (request, socket, head) => {
   sessionParser(request, {}, (err) => {
     if (err) {
       console.error('Session retrieval error:', err);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    if (request.session.user) {
+    if (request.session && request.session.user) {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
     } else {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
+      return;
     }
   });
 });
