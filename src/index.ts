@@ -241,10 +241,12 @@ wss.on('connection', (ws, req) => {
             }
           });
           try {
-            deltasTx();
+            deltasTx.immediate();
             takeSnapshotDebounced(treeId);
           } catch (e) {
-            conflictExists = true; // TODO : Check if this is the right error
+            if (e instanceof ConflictError) {
+              conflictExists = true; // TODO : Check if this is the right error
+            }
             debug(e.message)
             console.error(e);
           }
@@ -786,6 +788,18 @@ app.get('*', (req, res) => {
 
 /* ==== Delta Handlers ==== */
 
+class ConflictError extends Error {
+  constructor(message?: string) {
+    super(message); // pass the message up to the Error constructor
+
+    // Set the prototype explicitly to allow instanceof checks to work correctly
+    // since TypeScript doesn't set the prototype automatically when extending native JavaScript classes
+    Object.setPrototypeOf(this, ConflictError.prototype);
+
+    this.name = 'ConflictError'; // custom name for your error
+  }
+}
+
 function runDelta(treeId, delta, userId) {
   const ts = delta.ts;
 
@@ -818,7 +832,7 @@ function runIns(ts, treeId, userId, id, ins )  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let userTrees = treesByOwner.all(userId);
   if (!userTrees.map(t => t.id).includes(treeId)) {
-    throw new Error(`User ${userId} doesn't have access to tree ${treeId}`);
+    throw new ConflictError(`User ${userId} doesn't have access to tree ${treeId}`);
   }
 
   const parentPresent = ins.p == null || cardById.get(ins.p);
@@ -827,7 +841,7 @@ function runIns(ts, treeId, userId, id, ins )  {
     debug(`${ts}: Inserted card ${id.slice(0,10)} at ${ins.p ? ins.p.slice(0,10) : ins.p} with ${JSON.stringify(ins.c.slice(0, 20))}`);
   } else {
     debug(`Ins Conflict : Parent ${ins.p} not present`);
-    throw new Error(`Ins Conflict : Parent ${ins.p} not present`);
+    throw new ConflictError(`Ins Conflict : Parent ${ins.p} not present`);
   }
 }
 
@@ -837,22 +851,26 @@ function runUpd(ts, id, upd )  {
     cardUpdate.run(ts, upd.c, id);
     debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c.slice(0,20))}`);
   } else if (card == null) {
-    throw new Error(`Upd Conflict : Card '${id}' not present.`);
+    throw new ConflictError(`Upd Conflict : Card '${id}' not present.`);
   } else if (card.updatedAt != upd.e) {
-    throw new Error(`Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`);
+    throw new ConflictError(`Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`);
   } else {
-    throw new Error(`Upd Conflict : Card '${id}' unknown error`);
+    throw new ConflictError(`Upd Conflict : Card '${id}' unknown error`);
   }
 }
 
 function runMov(ts, id, mov )  {
   const parentPresent = mov.p == null || cardById.get(mov.p) != null;
   const card = cardById.get(id);
-  if(card != null && parentPresent && !isAncestor(id, mov.p)) {
+  if(card == null) {
+    throw new ConflictError(`Mov Conflict : Card ${id} not present`);
+  } else if (!parentPresent) {
+    throw new ConflictError(`Mov Conflict : Parent ${mov.p} not present`);
+  } else if (isAncestor(id, mov.p)) {
+    throw new ConflictError(`Mov Conflict : Card ${id} is an ancestor of ${mov.p}`);
+  } else {
     cardMove.run(ts, mov.p, mov.pos, id);
     debug(`${ts}: Moved card ${id} to ${mov.p} at ${mov.pos}`);
-  } else {
-    throw new Error('Mov Conflict : Card not present or parent not present or would create a cycle');
   }
 }
 
@@ -862,18 +880,18 @@ function runDel(ts, id, del )  {
     cardDelete.run(ts, id);
     debug(`${ts}: Deleted card ${id}`);
   } else if (card == null) {
-    throw new Error(`Del Conflict : Card '${id}' not present`);
+    throw new ConflictError(`Del Conflict : Card '${id}' not present`);
   } else if (card.updatedAt != del.e) {
-    throw new Error(`Del Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${del.e}`);
+    throw new ConflictError(`Del Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${del.e}`);
   } else {
-    throw new Error(`Del Conflict : Card '${id}' unknown error`);
+    throw new ConflictError(`Del Conflict : Card '${id}' unknown error`);
   }
 }
 
 function runUndel(ts, id)  {
   const info = cardUndelete.run(id);
   if (info.changes == 0) {
-    throw new Error('Undel Conflict : Card not present');
+    throw new ConflictError('Undel Conflict : Card not present');
   }
   debug(`${ts}: Undeleted card ${id}`);
 }
