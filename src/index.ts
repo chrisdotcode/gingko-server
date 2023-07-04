@@ -862,15 +862,17 @@ function runUpd(ts, id, upd )  {
 function runMov(ts, id, mov )  {
   const parentPresent = mov.p == null || cardById.get(mov.p) != null;
   const card = cardById.get(id);
-  if(card == null) {
+  if (card != null && parentPresent && !isAncestor(id, mov.p)) {
+    cardMove.run(ts, mov.p, mov.pos, id);
+    debug(`${ts}: Moved card ${id} to ${mov.p} at ${mov.pos}`);
+  } else if(card == null) {
     throw new ConflictError(`Mov Conflict : Card ${id} not present`);
   } else if (!parentPresent) {
     throw new ConflictError(`Mov Conflict : Parent ${mov.p} not present`);
   } else if (isAncestor(id, mov.p)) {
     throw new ConflictError(`Mov Conflict : Card ${id} is an ancestor of ${mov.p}`);
   } else {
-    cardMove.run(ts, mov.p, mov.pos, id);
-    debug(`${ts}: Moved card ${id} to ${mov.p} at ${mov.pos}`);
+    throw new ConflictError(`Mov Conflict : Card ${id} unknown error`);
   }
 }
 
