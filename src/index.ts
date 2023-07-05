@@ -187,16 +187,13 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({t: "user", d: userData}));
   }
 
-  //console.time("trees load");
   ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
-  //console.timeEnd("trees load");
 
   ws.on('message', function incoming(message) {
     try {
       const msg = JSON.parse(message);
       switch (msg.t) {
         case "trees":
-          //console.time("trees");
           // TODO : Should only be able to modify trees that you own
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
@@ -207,11 +204,9 @@ wss.on('connection', (ws, req) => {
               otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
             }
           }
-          //console.timeEnd("trees");
           break;
 
         case 'pull':
-          //console.time('pull');
           // TODO : Should only be able to pull trees that you own (or are shared with)
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
@@ -220,44 +215,32 @@ wss.on('connection', (ws, req) => {
             const cards = cardsSince.all(msg.d[0], msg.d[1]);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
           }
-          //console.timeEnd('pull');
           break;
 
         case 'push':
           // No need for permissions check, as the conflict resolution will take care of it
-          //console.time('push');
-          let conflictExists = false;
-          const lastTs = msg.d.dlts[msg.d.dlts.length - 1].ts;
-          debug('push recvd ts: ', lastTs)
+          const lastTsRecvd = msg.d.dlts[msg.d.dlts.length - 1].ts;
+          debug('push recvd ts: ', lastTsRecvd)
           const treeId = msg.d.tr;
 
           // Note : If I'm not generating any hybrid logical clock values,
           // then having this here is likely pointless.
-          hlc.recv(lastTs);
+          hlc.recv(lastTsRecvd);
 
+          const savedTs = [];
           const deltasTx = db.transaction(() => {
             for (let delta of msg.d.dlts) {
-              runDelta(treeId, delta, userId)
+              let savedTsInDelta = runDelta(treeId, delta, userId)
+              savedTs.push(...savedTsInDelta);
             }
           });
           try {
             deltasTx.immediate();
+            debug('push saved ts: ', savedTs)
             takeSnapshotDebounced(treeId);
-          } catch (e) {
-            if (e instanceof ConflictError) {
-              conflictExists = true; // TODO : Check if this is the right error
-            }
-            debug(e.message)
-            console.error(e);
-          }
 
-          if (conflictExists) {
-            const cards = cardsSince.all(msg.d.tr, msg.d.chk);
-            debug('conflict cards: ', cards.map(c => c.updatedAt))
-            ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
-          } else {
-            debug('pushOk', lastTs);
-            ws.send(JSON.stringify({t: 'pushOk', d: lastTs}));
+            let lastTsSaved = _.max(savedTs);
+            ws.send(JSON.stringify({t: 'pushOk', d: lastTsSaved}));
 
             const owner = treeOwner.get(treeId);
             const usersToNotify = [owner];
@@ -266,13 +249,24 @@ wss.on('connection', (ws, req) => {
                 otherWs.send(JSON.stringify({t: "doPull", d: treeId}));
               }
             }
+          } catch (e) {
+            if (e instanceof ConflictError) {
+              const cards = cardsSince.all(msg.d.tr, msg.d.chk);
+              debug('conflict cards: ', cards.map(c => c.updatedAt))
+              if (cards.length === 0 && e.conflict) {
+                cards.push(e.conflict);
+              }
+              ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
+            } else {
+              ws.send(JSON.stringify({t: 'pushError', d: e}));
+              console.error(e);
+            }
+            debug(e)
           }
-          //console.timeEnd('push');
           break;
 
         case 'pullHistoryMeta': {
           // TODO : Should only be able to pull history meta that you own (or are shared with)
-          //console.time('pullHistoryMeta');
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const historyMeta = _.chain(history)
@@ -281,13 +275,11 @@ wss.on('connection', (ws, req) => {
             .values()
             .value();
           ws.send(JSON.stringify({t: 'historyMeta', d: historyMeta, tr: treeId}));
-          //console.timeEnd('pullHistoryMeta');
           break;
         }
 
         case 'pullHistory': {
           // TODO : Should only be able to pull history that you own (or are shared with)
-          //console.time('pullHistory');
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const expandedHistory = expand(history);
@@ -297,15 +289,12 @@ wss.on('connection', (ws, req) => {
             .values()
             .value();
           ws.send(JSON.stringify({t: 'history', d: historyData, tr: treeId}));
-          //console.timeEnd('pullHistory');
           break;
         }
 
         case 'setLanguage':
-          //console.time('setLanguage');
           userSetLanguage.run(msg.d, userId);
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
-          //console.timeEnd('setLanguage');
           break;
       }
     } catch (e) {
@@ -789,46 +778,57 @@ app.get('*', (req, res) => {
 /* ==== Delta Handlers ==== */
 
 class ConflictError extends Error {
-  constructor(message?: string) {
+  conflict: any;
+
+  constructor(message?: string, conflict?: any) {
     super(message); // pass the message up to the Error constructor
 
     // Set the prototype explicitly to allow instanceof checks to work correctly
     // since TypeScript doesn't set the prototype automatically when extending native JavaScript classes
     Object.setPrototypeOf(this, ConflictError.prototype);
 
+    // This line is necessary to get the correct stack trace
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ConflictError);
+    }
+
+    this.conflict = conflict;
+
     this.name = 'ConflictError'; // custom name for your error
   }
 }
 
-function runDelta(treeId, delta, userId) {
+function runDelta(treeId, delta, userId) : string[] {
   const ts = delta.ts;
+  const savedTs = [];
 
   for (let op of delta.ops) {
     switch (op.t) {
       case 'i':
-        runIns(ts, treeId, userId, delta.id, op);
+        savedTs.push(runIns(ts, treeId, userId, delta.id, op));
         break;
 
       case 'u':
-        runUpd(ts, delta.id, op);
+        savedTs.push(runUpd(ts, delta.id, op));
         break;
 
       case 'm':
-        runMov(ts, delta.id, op);
+        savedTs.push(runMov(ts, delta.id, op));
         break;
 
       case 'd':
-        runDel(ts, delta.id, op);
+        savedTs.push(runDel(ts, delta.id, op));
         break;
 
       case 'ud':
-        runUndel(ts, delta.id);
+        savedTs.push(runUndel(ts, delta.id));
         break;
     }
   }
+  return savedTs;
 }
 
-function runIns(ts, treeId, userId, id, ins )  {
+function runIns(ts, treeId, userId, id, ins ) : string  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let userTrees = treesByOwner.all(userId);
   if (!userTrees.map(t => t.id).includes(treeId)) {
@@ -839,32 +839,35 @@ function runIns(ts, treeId, userId, id, ins )  {
   if (parentPresent) {
     cardInsert.run(ts, id, treeId, ins.c, ins.p, ins.pos, 0);
     debug(`${ts}: Inserted card ${id.slice(0,10)} at ${ins.p ? ins.p.slice(0,10) : ins.p} with ${JSON.stringify(ins.c.slice(0, 20))}`);
+    return ts;
   } else {
-    debug(`Ins Conflict : Parent ${ins.p} not present`);
     throw new ConflictError(`Ins Conflict : Parent ${ins.p} not present`);
   }
 }
 
-function runUpd(ts, id, upd )  {
+function runUpd(ts, id, upd ) : string {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
     cardUpdate.run(ts, upd.c, id);
     debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c.slice(0,20))}`);
+    return ts;
   } else if (card == null) {
     throw new ConflictError(`Upd Conflict : Card '${id}' not present.`);
   } else if (card.updatedAt != upd.e) {
-    throw new ConflictError(`Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`);
+    let msg = `Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`;
+    throw new ConflictError(msg, card);
   } else {
     throw new ConflictError(`Upd Conflict : Card '${id}' unknown error`);
   }
 }
 
-function runMov(ts, id, mov )  {
+function runMov(ts, id, mov ) : string  {
   const parentPresent = mov.p == null || cardById.get(mov.p) != null;
   const card = cardById.get(id);
   if (card != null && parentPresent && !isAncestor(id, mov.p)) {
     cardMove.run(ts, mov.p, mov.pos, id);
     debug(`${ts}: Moved card ${id} to ${mov.p} at ${mov.pos}`);
+    return ts;
   } else if(card == null) {
     throw new ConflictError(`Mov Conflict : Card ${id} not present`);
   } else if (!parentPresent) {
@@ -876,26 +879,29 @@ function runMov(ts, id, mov )  {
   }
 }
 
-function runDel(ts, id, del )  {
+function runDel(ts, id, del ) : string {
   const card = cardById.get(id);
   if (card != null && card.updatedAt == del.e) {
     cardDelete.run(ts, id);
     debug(`${ts}: Deleted card ${id}`);
+    return ts;
   } else if (card == null) {
     throw new ConflictError(`Del Conflict : Card '${id}' not present`);
   } else if (card.updatedAt != del.e) {
-    throw new ConflictError(`Del Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${del.e}`);
+    let msg = `Del Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${del.e}`;
+    throw new ConflictError(msg, card);
   } else {
     throw new ConflictError(`Del Conflict : Card '${id}' unknown error`);
   }
 }
 
-function runUndel(ts, id)  {
+function runUndel(ts, id) : string {
   const info = cardUndelete.run(id);
   if (info.changes == 0) {
     throw new ConflictError('Undel Conflict : Card not present');
   }
   debug(`${ts}: Undeleted card ${id}`);
+  return ts;
 }
 
 // --- Helpers ---
