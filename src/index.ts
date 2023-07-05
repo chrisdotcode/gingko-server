@@ -259,6 +259,7 @@ wss.on('connection', (ws, req) => {
               ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
             } else {
               ws.send(JSON.stringify({t: 'pushError', d: e}));
+              axios.post(config.NTFY_URL, e.message).catch();
               console.error(e);
             }
             debug(e)
