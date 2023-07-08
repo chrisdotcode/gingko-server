@@ -244,6 +244,9 @@ wss.on('connection', (ws, req) => {
             }
 
             debug('pushOk : ', savedTs);
+
+            // Temporarily send both formats of pushOk for backwards compatibility
+            ws.send(JSON.stringify({t: 'pushOk', d: _.max(savedTs)}));
             ws.send(JSON.stringify({t: 'pushOk', d: savedTs}));
 
             const owner = treeOwner.get(treeId);
