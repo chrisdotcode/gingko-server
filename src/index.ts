@@ -78,6 +78,7 @@ const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND d
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
 const cardInsert = db.prepare('INSERT OR REPLACE INTO cards (updatedAt, id, treeId, content, parentId, position, deleted) VALUES (?, ?, ?, ?, ?, ?, ?)');
 const cardUpdate = db.prepare('UPDATE cards SET updatedAt = ?, content = ? WHERE id = ?');
+const cardUpdateTs = db.prepare('UPDATE cards SET updatedAt = ? WHERE id = ?');
 const cardMove = db.prepare('UPDATE cards SET updatedAt = ?, parentId = ?, position = ? WHERE id = ?');
 const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WHERE id = ?');
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
@@ -236,11 +237,14 @@ wss.on('connection', (ws, req) => {
           });
           try {
             deltasTx.immediate();
-            debug('push saved ts: ', savedTs)
             takeSnapshotDebounced(treeId);
 
-            let lastTsSaved = _.max(savedTs);
-            ws.send(JSON.stringify({t: 'pushOk', d: lastTsSaved}));
+            if (savedTs.length === 0) {
+              throw new Error('Transaction passed but no cards saved');
+            }
+
+            debug('pushOk : ', savedTs);
+            ws.send(JSON.stringify({t: 'pushOk', d: savedTs}));
 
             const owner = treeOwner.get(treeId);
             const usersToNotify = [owner];
@@ -259,10 +263,10 @@ wss.on('connection', (ws, req) => {
               ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
             } else {
               ws.send(JSON.stringify({t: 'pushError', d: e}));
-              axios.post(config.NTFY_URL, e.message).catch();
+              //axios.post(config.NTFY_URL, e.message).catch(e => console.error(e));
               console.error(e);
             }
-            debug(e)
+            debug(e.message)
           }
           break;
 
@@ -803,6 +807,11 @@ function runDelta(treeId, delta, userId) : string[] {
   const ts = delta.ts;
   const savedTs = [];
 
+  if (delta.ops.length === 0) {
+    savedTs.push(runUpdTs(ts, delta.id))
+    return savedTs;
+  }
+
   for (let op of delta.ops) {
     switch (op.t) {
       case 'i':
@@ -902,6 +911,15 @@ function runUndel(ts, id) : string {
     throw new ConflictError('Undel Conflict : Card not present');
   }
   debug(`${ts}: Undeleted card ${id}`);
+  return ts;
+}
+
+function runUpdTs(ts, id) : string {
+  const info = cardUpdateTs.run(ts, id);
+  if (info.changes == 0) {
+    throw new ConflictError('UpdTs Conflict : Card not present');
+  }
+  debug(`${ts}: Updated card ${id} timestamp to ${ts}`);
   return ts;
 }
 
