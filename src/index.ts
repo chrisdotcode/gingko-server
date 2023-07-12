@@ -195,7 +195,6 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(message);
       switch (msg.t) {
         case "trees":
-          // TODO : Should only be able to modify trees that you own
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
           const usersToNotify = msg.d.map(tree => tree.owner);
@@ -208,7 +207,6 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'pull':
-          // TODO : Should only be able to pull trees that you own (or are shared with)
           if (msg.d[1] == '0') {
             const cards = cardsAllUndeleted.all(msg.d[0]);
             ws.send(JSON.stringify({t: 'cards', d: cards}));
@@ -274,7 +272,6 @@ wss.on('connection', (ws, req) => {
           break;
 
         case 'pullHistoryMeta': {
-          // TODO : Should only be able to pull history meta that you own (or are shared with)
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const historyMeta = _.chain(history)
@@ -287,7 +284,6 @@ wss.on('connection', (ws, req) => {
         }
 
         case 'pullHistory': {
-          // TODO : Should only be able to pull history that you own (or are shared with)
           const treeId = msg.d;
           const history = getSnapshots.all(treeId);
           const expandedHistory = expand(history);
