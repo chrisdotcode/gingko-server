@@ -65,7 +65,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
-const treesModifiedBefore = db.prepare('SELECT id FROM trees WHERE updatedAt < ? ORDER BY updatedAt ASC');
+const cardTreesModifiedBefore = db.prepare("SELECT id FROM trees WHERE location='cardbased' AND updatedAt < ? ORDER BY updatedAt ASC");
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
@@ -123,7 +123,7 @@ const compactTreesTx = db.transaction((treeIds : string[]) => {
 })
 
 const compactAllBefore = function(timestamp : number) {
-  const treeIds = treesModifiedBefore.all(timestamp).map((row) => row.id);
+  const treeIds = cardTreesModifiedBefore.all(timestamp).map((row) => row.id);
   debug(`Compacting ${treeIds.length} trees`)
   if (treeIds.length > 0) {
     compactTreesTx.immediate(treeIds);
@@ -782,6 +782,22 @@ app.post('/test/confirm', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send(err);
+  }
+});
+
+
+app.get('/compact', (req, res) => {
+  if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+    /*
+    const daysAgo = req.query.daysAgo;
+    const timestamp = Date.now() - (daysAgo * 24 * 60 * 60 * 1000);
+    debug(`Compacting all trees before ${timestamp}`);
+    compactAllBefore(timestamp);
+
+     */
+    res.send("Compacting");
+  } else {
+    res.status(403).send("Forbidden");
   }
 });
 
