@@ -109,6 +109,7 @@ const runCompactions = db.transaction((compactions : SnapshotCompaction[]) => {
 //@ts-ignore
 const compactTreesTx = db.transaction((treeIds : string[]) => {
   for (const treeId of treeIds) {
+    debug(`Compacting tree ${treeId}`)
     const snapshots = getSnapshots.all(treeId);
     if (snapshots.length > 0) {
       const compactions = compact(snapshots);
@@ -123,21 +124,11 @@ const compactTreesTx = db.transaction((treeIds : string[]) => {
 
 const compactAllBefore = function(timestamp : number) {
   const treeIds = treesModifiedBefore.all(timestamp).map((row) => row.id);
+  debug(`Compacting ${treeIds.length} trees`)
   if (treeIds.length > 0) {
     compactTreesTx.immediate(treeIds);
   }
 }
-
-new CronJob('37 0 * * *', () => {
-  const now = Math.floor(Date.now());
-  debug('Running compaction job at ' + new Date().toISOString());
-  try {
-    compactAllBefore(/* 30 days ago */ now - 30 * 24 * 60 * 60 * 1000);
-  } catch (e) {
-    console.error(e);
-  }
-}
-, null, true, 'America/New_York');
 
 
 _.mixin({
@@ -150,9 +141,10 @@ _.mixin({
 });
 //@ts-ignore
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
+  debug(`Taking snapshot for tree ${treeId}`)
     takeSnapshotSQL.run({treeId});
-} , 5 * 1000 /* 5 seconds */
-  , { maxWait: 25 * 1000 /* 25 seconds */ }
+} , 15 * 1000 /* 15 seconds */
+  , { maxWait: 150 * 1000 /* 150 seconds */ }
 );
 
 
