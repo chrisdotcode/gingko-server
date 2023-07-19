@@ -22,11 +22,12 @@ import Stripe from 'stripe';
 
 // Misc
 import _ from "lodash";
-import {expand, SnapshotCompaction} from './snapshots.js';
+import {expand, compact, SnapshotCompaction} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
+import { CronJob } from "cron";
 import Debug from "debug";
 const debug = Debug('cards');
 import morgan from "morgan";
@@ -64,6 +65,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
+const treesModifiedBefore = db.prepare('SELECT id FROM trees WHERE updatedAt < ? ORDER BY updatedAt ASC');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
@@ -96,7 +98,7 @@ FROM cards WHERE treeId = @treeId AND deleted != 1
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
-const compactAll = db.transaction((compactions : SnapshotCompaction[]) => {
+const runCompactions = db.transaction((compactions : SnapshotCompaction[]) => {
   for(const compaction of compactions) {
     removeSnapshot.run(compaction.snapshot, compaction.treeId);
     for (const row of compaction.compactedData) {
@@ -104,6 +106,39 @@ const compactAll = db.transaction((compactions : SnapshotCompaction[]) => {
     }
   }
 });
+//@ts-ignore
+const compactTreesTx = db.transaction((treeIds : string[]) => {
+  for (const treeId of treeIds) {
+    const snapshots = getSnapshots.all(treeId);
+    if (snapshots.length > 0) {
+      const compactions = compact(snapshots);
+      if (compactions.length > 0) {
+        debug(`Compacting ${compactions.length} snapshots for tree ${treeId}`)
+        runCompactions(compactions);
+        debug(`Compacted ${compactions.length} snapshots for tree ${treeId}`)
+      }
+    }
+  }
+})
+
+const compactAllBefore = function(timestamp : number) {
+  const treeIds = treesModifiedBefore.all(timestamp).map((row) => row.id);
+  if (treeIds.length > 0) {
+    compactTreesTx.immediate(treeIds);
+  }
+}
+
+new CronJob('37 0 * * *', () => {
+  const now = Math.floor(Date.now());
+  debug('Running compaction job at ' + new Date().toISOString());
+  try {
+    compactAllBefore(/* 30 days ago */ now - 30 * 24 * 60 * 60 * 1000);
+  } catch (e) {
+    console.error(e);
+  }
+}
+, null, true, 'America/New_York');
+
 
 _.mixin({
   memoizeDebounce: function(func, wait=0, options={}) {
