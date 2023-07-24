@@ -65,7 +65,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
-const cardTreesModifiedBefore = db.prepare("SELECT id FROM trees WHERE location='cardbased' AND updatedAt < ? ORDER BY updatedAt ASC");
+const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
@@ -96,7 +96,10 @@ SELECT
 FROM cards WHERE treeId = @treeId AND deleted != 1
 `);
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
+const getSnapshotIds = db.prepare('SELECT DISTINCT snapshot FROM tree_snapshots WHERE treeId = ? ORDER BY updatedAt DESC');
+const treeIdsWithSnapshots = db.prepare('SELECT DISTINCT treeId FROM tree_snapshots');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
+const removeSnapshots = db.prepare('DELETE FROM tree_snapshots WHERE treeId = ? AND snapshot NOT IN (SELECT value FROM json_each(?))');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
 const runCompactions = db.transaction((compactions : SnapshotCompaction[]) => {
   for(const compaction of compactions) {
@@ -123,10 +126,30 @@ const compactTreesTx = db.transaction((treeIds : string[]) => {
 })
 
 const compactAllBefore = function(timestamp : number) {
-  const treeIds = cardTreesModifiedBefore.all(timestamp).map((row) => row.id);
+  const treeIds = treesModdedBeforeWithSnapshots.all(timestamp).map((row) => row.id);
   debug(`Compacting ${treeIds.length} trees`)
   if (treeIds.length > 0) {
     compactTreesTx.immediate(treeIds);
+  }
+}
+const decimateTreeSnapshots = function(treeId : string, desiredSnapshotsPerTreeId : number) {
+  const totalSnapshots = db.prepare('SELECT COUNT(DISTINCT snapshot) FROM tree_snapshots WHERE treeId = ?').pluck().get(treeId);
+  const N = Math.max(1, Math.floor(totalSnapshots / desiredSnapshotsPerTreeId));
+
+  const snapshotIds = getSnapshotIds.all(treeId).map((row) => row.snapshot);
+
+  // Filter these IDs to retain only every Nth ID
+  const retainedSnapshotIds = snapshotIds.filter((_, index) => index % N === 0);
+  console.log(retainedSnapshotIds)
+
+
+  // Delete the snapshots that are not in the retained list for the current treeId
+  removeSnapshots.run(treeId, JSON.stringify(retainedSnapshotIds));
+}
+const decimateAllSnapshots = function(desiredSnapshotsPerTreeId : number) {
+  const treeIds = treeIdsWithSnapshots.all().map((row) => row.treeId);
+  for (const treeId of treeIds) {
+    decimateTreeSnapshots(treeId, desiredSnapshotsPerTreeId);
   }
 }
 
@@ -786,16 +809,24 @@ app.post('/test/confirm', async (req, res) => {
 });
 
 
-app.get('/compact', (req, res) => {
+app.get('/utils/compact', (req, res) => {
   if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
-    /*
     const daysAgo = req.query.daysAgo;
     const timestamp = Date.now() - (daysAgo * 24 * 60 * 60 * 1000);
     debug(`Compacting all trees before ${timestamp}`);
     compactAllBefore(timestamp);
-
-     */
     res.send("Compacting");
+  } else {
+    res.status(403).send("Forbidden");
+  }
+});
+
+app.get('/utils/decimate', (req, res) => {
+  if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+    const numSnapshots = req.query.num;
+    debug(`Decimating all trees to ${numSnapshots} snapshots`);
+    decimateAllSnapshots(numSnapshots);
+    res.send("Decimating");
   } else {
     res.status(403).send("Forbidden");
   }
