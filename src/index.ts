@@ -75,6 +75,7 @@ const upsertMany = db.transaction((trees) => {
 
 // Cards Table
 db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
+db.exec('CREATE INDEX IF NOT EXISTS cards_treeId ON cards (treeId)');
 const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
 const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
@@ -87,6 +88,7 @@ const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?')
 
 // Tree Snapshots Table
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
+db.exec('CREATE INDEX IF NOT EXISTS tree_snapshots_treeId ON tree_snapshots (treeId)');
 const takeSnapshotSQL = db.prepare(`
 INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta)
 SELECT
