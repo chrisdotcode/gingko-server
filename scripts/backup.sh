@@ -8,8 +8,8 @@ sqlite3 /home/deployer/production/data/data.sqlite "VACUUM INTO '/tmp/db-backup'
 gzip /tmp/db-backup
 
 # Upload backup to Backblaze B2 using a rolling daily naming scheme.
-# On the first of the month, create a new monthly backup.
-# Else, create a new daily backup.
+# Daily backups are kept for 1 month.
+# Monthly backups are kept for 1 year.
 day=$(date +%d)
 if [ "$day" -eq 01 ]
 then
