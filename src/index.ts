@@ -27,7 +27,6 @@ import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
-import { CronJob } from "cron";
 import Debug from "debug";
 const debug = Debug('cards');
 import morgan from "morgan";
