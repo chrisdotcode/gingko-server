@@ -20,5 +20,8 @@ else
     gingkowriter-rolling-backups /tmp/db-backup.gz daily/`date +%d`.gz
 fi
 
+rm /tmp/db-backup
+rm /tmp/db-backup.gz
+
 # Notify dead man that back up completed successfully.
 curl -d s=$? https://nosnch.in/0c1978ce6e &> /dev/null
