@@ -1,5 +1,7 @@
 #!/bin/bash -x
 
+PATH=/usr/local/bin:$PATH
+
 # Ensure script stops when commands fail.
 set -e
 
