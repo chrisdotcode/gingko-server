@@ -310,7 +310,7 @@ wss.on('connection', (ws, req) => {
               if (cards.length === 0 && e.conflict) {
                 cards.push(e.conflict);
               }
-              ws.send(JSON.stringify({t: 'cardsConflict', d: cards}));
+              ws.send(JSON.stringify({t: 'cardsConflict', d: cards, e: e }));
             } else {
               ws.send(JSON.stringify({t: 'pushError', d: e}));
               axios.post(config.NTFY_URL, e.message).catch(e => console.error(e));
