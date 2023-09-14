@@ -217,11 +217,17 @@ app.use(sessionParser);
 
 /* ==== WebSocket ==== */
 
+function heartbeat() {
+  this.isAlive = true;
+}
+
 const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
 const userToWs = new Map();
 
 wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
+  ws.on('pong', heartbeat);
   console.log("ws connection", req.session);
   const userId = req.session.user;
   wsToUser.set(ws, userId);
@@ -243,6 +249,11 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', function incoming(message) {
     try {
+      if (message == 'ping') {
+        ws.send('pong');
+        return;
+      }
+
       const msg = JSON.parse(message);
       switch (msg.t) {
         case "trees":
@@ -366,6 +377,19 @@ wss.on('connection', (ws, req) => {
       }
     }
   });
+});
+
+const interval = setInterval(function ping() {
+  wss.clients.forEach(function each(ws) {
+    if (ws.isAlive === false) return ws.terminate();
+
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', function close() {
+  clearInterval(interval);
 });
 
 wss.on('error', (err) => {
