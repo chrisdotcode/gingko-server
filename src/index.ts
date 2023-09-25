@@ -366,6 +366,10 @@ wss.on('connection', (ws, req) => {
     }
   });
 
+  ws.on('error', (err) => {
+    console.error(err);
+  });
+
   ws.on('close', () => {
     wsToUser.delete(ws);
 
