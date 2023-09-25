@@ -957,15 +957,13 @@ function runIns(ts, treeId, userId, id, ins ) : string  {
 
 function runUpd(ts, id, upd ) : string {
   const card = cardById.get(id);
-  if (card != null && card.updatedAt == upd.e) { // card is present and timestamp is as expected
+  if (card != null /*&& card.updatedAt == upd.e*/) {
+    // card is present (disable timestamp check, for LWW mode)
     cardUpdate.run(ts, upd.c, id);
     debug(`${ts}: Updated card ${id} to ${JSON.stringify(upd.c.slice(0,20))}`);
     return ts;
   } else if (card == null) {
     throw new ConflictError(`Upd Conflict : Card '${id}' not present.`);
-  } else if (card.updatedAt != upd.e) {
-    let msg = `Upd Conflict : Card '${id}' timestamp mismatch : ${card.updatedAt} != ${upd.e}`;
-    throw new ConflictError(msg, card);
   } else {
     throw new ConflictError(`Upd Conflict : Card '${id}' unknown error`);
   }
