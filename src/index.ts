@@ -65,6 +65,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
+const treeCollaborators = db.prepare('SELECT collaborators FROM trees WHERE id = ?').pluck();
 const treesSharedWith = db.prepare('SELECT trees.* FROM trees, json_each(trees.collaborators) WHERE json_each.value = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -250,7 +251,6 @@ wss.on('connection', (ws, req) => {
 
   const userTrees = treesByOwner.all(userId);
   const sharedWithUserTrees = treesSharedWith.all(userId);
-  console.log('sending trees', userTrees, sharedWithUserTrees);
   ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
 
   ws.on('message', function incoming(message) {
@@ -314,7 +314,10 @@ wss.on('connection', (ws, req) => {
             ws.send(JSON.stringify({t: 'pushOk', d: savedTs}));
 
             const owner = treeOwner.get(treeId);
-            const usersToNotify = [owner];
+            const collaboratorsRaw = treeCollaborators.get(treeId);
+            const collaborators = collaboratorsRaw ? JSON.parse(collaboratorsRaw) : [];
+            const usersToNotify = [owner, ...collaborators];
+            console.log('usersToNotify: ', usersToNotify)
             for (const [otherWs, userId] of wsToUser) {
               if (usersToNotify.includes(userId) && otherWs !== ws) {
                 otherWs.send(JSON.stringify({t: "doPull", d: treeId}));
@@ -960,7 +963,9 @@ function runDelta(treeId, delta, userId) : string[] {
 
 function runIns(ts, treeId, userId, id, ins ) : string  {
   // To prevent insertion of cards to trees the user shouldn't have access to
-  let userTrees = treesByOwner.all(userId);
+  let treesOwned = treesByOwner.all(userId);
+  const sharedWithUserTrees = treesSharedWith.all(userId);
+  const userTrees = [...treesOwned, ...sharedWithUserTrees];
   if (!userTrees.map(t => t.id).includes(treeId)) {
     throw new ConflictError(`User ${userId} doesn't have access to tree ${treeId}`);
   }
