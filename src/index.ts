@@ -65,8 +65,8 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
-const treeCollaborators = db.prepare('SELECT collaborators FROM trees WHERE id = ?').pluck();
-const treesSharedWith = db.prepare('SELECT trees.* FROM trees, json_each(trees.collaborators) WHERE json_each.value = ?');
+//const treeCollaborators = db.prepare('SELECT collaborators FROM trees WHERE id = ?').pluck();
+//const treesSharedWith = db.prepare('SELECT trees.* FROM trees, json_each(trees.collaborators) WHERE json_each.value = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
@@ -74,6 +74,14 @@ const upsertMany = db.transaction((trees) => {
         treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.collaborators, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
     }
 });
+
+// Collaborators Table
+db.exec(` CREATE TABLE IF NOT EXISTS tree_collaborators ( tree_id TEXT, user_id TEXT, FOREIGN KEY(tree_id) REFERENCES trees(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, UNIQUE(tree_id, user_id) ) `);
+const treeCollaboratorsInsert = db.prepare('INSERT OR REPLACE INTO tree_collaborators (tree_id, user_id) VALUES (?, ?)');
+const treeCollaboratorsDelete = db.prepare('DELETE FROM tree_collaborators WHERE tree_id = ? AND user_id = ?');
+const treeCollaboratorsByTree = db.prepare('SELECT user_id FROM tree_collaborators WHERE tree_id = ?').pluck();
+const treesSharedWithUser = db.prepare('SELECT tree_id FROM tree_collaborators WHERE user_id = ?').pluck();
+
 
 // Cards Table
 db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
@@ -250,7 +258,7 @@ wss.on('connection', (ws, req) => {
   }
 
   const userTrees = treesByOwner.all(userId);
-  const sharedWithUserTrees = treesSharedWith.all(userId);
+  const sharedWithUserTrees = treesSharedWithUser.all(userId);
   ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
 
   ws.on('message', function incoming(message) {
@@ -314,8 +322,8 @@ wss.on('connection', (ws, req) => {
             ws.send(JSON.stringify({t: 'pushOk', d: savedTs}));
 
             const owner = treeOwner.get(treeId);
-            const collaboratorsRaw = treeCollaborators.get(treeId);
-            const collaborators = collaboratorsRaw ? JSON.parse(collaboratorsRaw) : [];
+            const collaborators = treeCollaboratorsByTree.all(treeId);
+            console.log('collaborators: ', collaborators)
             const usersToNotify = [owner, ...collaborators];
             console.log('usersToNotify: ', usersToNotify)
             for (const [otherWs, userId] of wsToUser) {
@@ -963,10 +971,11 @@ function runDelta(treeId, delta, userId) : string[] {
 
 function runIns(ts, treeId, userId, id, ins ) : string  {
   // To prevent insertion of cards to trees the user shouldn't have access to
-  let treesOwned = treesByOwner.all(userId);
-  const sharedWithUserTrees = treesSharedWith.all(userId);
+  let treesOwned = treesByOwner.all(userId).map(t => t.id);
+  const sharedWithUserTrees = treesSharedWithUser.all(userId);
+  console.log('sharedWithUserTrees: ', sharedWithUserTrees);
   const userTrees = [...treesOwned, ...sharedWithUserTrees];
-  if (!userTrees.map(t => t.id).includes(treeId)) {
+  if (!userTrees.includes(treeId)) {
     throw new ConflictError(`User ${userId} doesn't have access to tree ${treeId}`);
   }
 
