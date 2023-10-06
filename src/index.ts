@@ -15,6 +15,7 @@ import proxy from "express-http-proxy";
 import session from "express-session";
 import redisConnect from 'connect-redis';
 import { WebSocketServer } from "ws";
+import * as realtime from "./realtime.js";
 import axios from "axios";
 import sgMail from "@sendgrid/mail";
 import config from "../config.js";
@@ -64,6 +65,7 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
+const treesSharedWith = db.prepare('SELECT trees.* FROM trees, json_each(trees.collaborators) WHERE json_each.value = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const upsertMany = db.transaction((trees) => {
@@ -224,6 +226,7 @@ function heartbeat() {
 const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
 const userToWs = new Map();
+const treeToCollabInfo = new Map<string, realtime.CollabInfo[]>();
 
 wss.on('connection', (ws, req) => {
   ws.isAlive = true;
@@ -245,7 +248,10 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({t: "user", d: userData}));
   }
 
-  ws.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+  const userTrees = treesByOwner.all(userId);
+  const sharedWithUserTrees = treesSharedWith.all(userId);
+  console.log('sending trees', userTrees, sharedWithUserTrees);
+  ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
 
   ws.on('message', function incoming(message) {
     try {
@@ -360,6 +366,17 @@ wss.on('connection', (ws, req) => {
           userSetLanguage.run(msg.d, userId);
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
           break;
+
+        case 'rt':
+          const rtTreeId = msg.d.tr;
+          const uid = msg.d.uid;
+          const collabInfo = {uuid: uid, userId: userId, ws: ws};
+          realtime.handleRT(treeToCollabInfo, collabInfo, rtTreeId, msg.d.m);
+          break;
+
+        default:
+          console.error('Unknown message type: ', msg.t)
+          break;
       }
     } catch (e) {
       console.error(e);
@@ -380,6 +397,9 @@ wss.on('connection', (ws, req) => {
         userToWs.delete(userId);
       }
     }
+
+    realtime.clientDisconnect(treeToCollabInfo, ws);
+    console.log('treeToCollabInfo: ', treeToCollabInfo);
   });
 });
 
