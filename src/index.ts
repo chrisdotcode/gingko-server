@@ -65,10 +65,20 @@ const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
-//const treeCollaborators = db.prepare('SELECT collaborators FROM trees WHERE id = ?').pluck();
-//const treesSharedWith = db.prepare('SELECT trees.* FROM trees, json_each(trees.collaborators) WHERE json_each.value = ?');
+const treeById = db.prepare('SELECT * FROM trees WHERE id = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
-const treeUpsert = db.prepare('INSERT OR REPLACE INTO trees (id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+const treeUpsert = db.prepare(`
+INSERT INTO trees(id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  location = excluded.location,
+  owner = excluded.owner,
+  collaborators = excluded.collaborators,
+  inviteUrl = excluded.inviteUrl,
+  updatedAt = excluded.updatedAt,
+  deletedAt = excluded.deletedAt;
+`);
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
         treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.collaborators, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
@@ -80,8 +90,13 @@ db.exec(` CREATE TABLE IF NOT EXISTS tree_collaborators ( tree_id TEXT, user_id 
 const treeCollaboratorsInsert = db.prepare('INSERT OR REPLACE INTO tree_collaborators (tree_id, user_id) VALUES (?, ?)');
 const treeCollaboratorsDelete = db.prepare('DELETE FROM tree_collaborators WHERE tree_id = ? AND user_id = ?');
 const treeCollaboratorsByTree = db.prepare('SELECT user_id FROM tree_collaborators WHERE tree_id = ?').pluck();
-const treesSharedWithUser = db.prepare('SELECT tree_id FROM tree_collaborators WHERE user_id = ?').pluck();
+const treeIdsSharedWithUser = db.prepare('SELECT tree_id FROM tree_collaborators WHERE user_id = ?').pluck();
+const treesSharedWithUser = db.prepare('SELECT * FROM trees WHERE id IN (SELECT tree_id FROM tree_collaborators WHERE user_id = ?)');
 
+// Invite Token Table
+db.exec('CREATE TABLE IF NOT EXISTS inviteTokens (token TEXT PRIMARY KEY, treeId TEXT, email TEXT, createdAt INTEGER)');
+const addInviteToken = db.prepare('INSERT OR REPLACE INTO inviteTokens (token, treeId, email, createdAt) VALUES (?, ?, ?, ?)');
+const getInviteToken = db.prepare('SELECT * FROM inviteTokens WHERE token = ?');
 
 // Cards Table
 db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
@@ -259,6 +274,7 @@ wss.on('connection', (ws, req) => {
 
   const userTrees = treesByOwner.all(userId);
   const sharedWithUserTrees = treesSharedWithUser.all(userId);
+  console.log('sharedWithUserTrees: ', sharedWithUserTrees)
   ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
 
   ws.on('message', function incoming(message) {
@@ -297,6 +313,15 @@ wss.on('connection', (ws, req) => {
           const lastTsRecvd = msg.d.dlts[msg.d.dlts.length - 1].ts;
           debug('push recvd ts: ', lastTsRecvd)
           const treeId = msg.d.tr;
+
+          // Check if the tree is owned by the user or shared with the user
+          const tree = treeById.get(treeId);
+          const treeCollaborators = treeCollaboratorsByTree.all(treeId);
+          console.log('treeCollaborators: ', treeCollaborators)
+          if (tree.owner !== userId && !treeCollaborators.includes(userId)) {
+            ws.send(JSON.stringify({t: 'pushError', d: 'You do not have permission to edit this tree'}));
+            break;
+          }
 
           // Note : If I'm not generating any hybrid logical clock values,
           // then having this here is likely pointless.
@@ -376,6 +401,36 @@ wss.on('connection', (ws, req) => {
         case 'setLanguage':
           userSetLanguage.run(msg.d, userId);
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
+          break;
+
+        case 'collab.add':
+          const collabEmail = msg.d.email;
+          const collabTreeId = msg.d.treeId;
+          const collabTree = treeById.get(collabTreeId);
+          if (collabTree.owner !== userId) {
+            ws.send(JSON.stringify({t: 'collab.addError', d: 'Only the owner can add collaborators'}));
+            break;
+          }
+          try {
+            treeCollaboratorsInsert.run(collabTreeId, collabEmail);
+          } catch (e) {
+            if (e.code && e.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+              ws.send(JSON.stringify({t: 'collab.addError', d: 'User does not exist'}));
+            } else {
+              console.error(e);
+            }
+          }
+          break;
+
+        case 'collab.remove':
+          const collabRemoveEmail = msg.d.email;
+          const collabRemoveTreeId = msg.d.treeId;
+          const collabRemoveTree = treeById.get(collabRemoveTreeId);
+          if (collabRemoveTree.owner !== userId) {
+            ws.send(JSON.stringify({t: 'collab.removeError', d: 'Only the owner can remove collaborators'}));
+            break;
+          }
+          treeCollaboratorsDelete.run(collabRemoveTreeId, collabRemoveEmail);
           break;
 
         case 'rt':
@@ -972,7 +1027,7 @@ function runDelta(treeId, delta, userId) : string[] {
 function runIns(ts, treeId, userId, id, ins ) : string  {
   // To prevent insertion of cards to trees the user shouldn't have access to
   let treesOwned = treesByOwner.all(userId).map(t => t.id);
-  const sharedWithUserTrees = treesSharedWithUser.all(userId);
+  const sharedWithUserTrees = treeIdsSharedWithUser.all(userId);
   console.log('sharedWithUserTrees: ', sharedWithUserTrees);
   const userTrees = [...treesOwned, ...sharedWithUserTrees];
   if (!userTrees.includes(treeId)) {
