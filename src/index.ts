@@ -230,7 +230,7 @@ function heartbeat() {
 const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
 const userToWs = new Map();
-const treeToCollabInfo = new Map<string, realtime.CollabInfo[]>();
+const channels = new Map<string, realtime.User[]>();
 
 wss.on('connection', (ws, req) => {
   ws.isAlive = true;
@@ -254,7 +254,6 @@ wss.on('connection', (ws, req) => {
 
   const userTrees = treesByOwner.all(userId);
   const sharedWithUserTrees = treesSharedWithUser.all(userId);
-  console.log('sharedWithUserTrees: ', sharedWithUserTrees)
   ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
 
   ws.on('message', function incoming(message) {
@@ -297,7 +296,6 @@ wss.on('connection', (ws, req) => {
           // Check if the tree is owned by the user or shared with the user
           const tree = treeById.get(treeId);
           const treeCollaborators = treeCollaboratorsByTree.all(treeId);
-          console.log('treeCollaborators: ', treeCollaborators)
           if (tree.owner !== userId && !treeCollaborators.includes(userId)) {
             ws.send(JSON.stringify({t: 'pushError', d: 'You do not have permission to edit this tree'}));
             break;
@@ -328,9 +326,7 @@ wss.on('connection', (ws, req) => {
 
             const owner = treeOwner.get(treeId);
             const collaborators = treeCollaboratorsByTree.all(treeId);
-            console.log('collaborators: ', collaborators)
             const usersToNotify = [owner, ...collaborators];
-            console.log('usersToNotify: ', usersToNotify)
             for (const [otherWs, userId] of wsToUser) {
               if (usersToNotify.includes(userId) && otherWs !== ws) {
                 otherWs.send(JSON.stringify({t: "doPull", d: treeId}));
@@ -416,8 +412,8 @@ wss.on('connection', (ws, req) => {
         case 'rt':
           const rtTreeId = msg.d.tr;
           const uid = msg.d.uid;
-          const collabInfo = {uuid: uid, userId: userId, ws: ws};
-          realtime.handleRT(treeToCollabInfo, collabInfo, rtTreeId, msg.d.m);
+          const user = {uuid: uid, userId: userId, ws: ws};
+          realtime.handleRT(channels, user, rtTreeId, msg.d.m);
           break;
 
         default:
@@ -444,8 +440,7 @@ wss.on('connection', (ws, req) => {
       }
     }
 
-    realtime.clientDisconnect(treeToCollabInfo, ws);
-    console.log('treeToCollabInfo: ', treeToCollabInfo);
+    realtime.disconnectWebSocket(channels, ws);
   });
 });
 
@@ -959,7 +954,7 @@ function runFilterSnapshots(treeId, debounceMs) {
 
   const snapshotsToKeep = debounce(snapshots, debounceMs);
   console.log('snapshotsToKeep: ', snapshotsToKeep)
-  debug(`Debounced tree ${treeId} to ${snapshotsToKeep.length} snapshots`);
+  console.log(`Debounced tree ${treeId} to ${snapshotsToKeep.length} snapshots`);
 
   const resultString = JSON.stringify(snapshotsToKeep.map(s => s.snapshot));
   console.log('resultString: ', resultString)

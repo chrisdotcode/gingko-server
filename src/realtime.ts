@@ -1,90 +1,79 @@
 import _ from "lodash";
 
-export type CollabInfo = {uuid: string, userId: string, ws: WebSocket};
-type CollabInfoMap = Map<string, CollabInfo[]>;
+export type User =
+  { uuid: string
+  , userId: string
+  , ws: WebSocket
+  };
+type ChannelMap = Map<string, User[]>;
 
-function addClientToTreeChannel(treeToCollabInfo : CollabInfoMap, collabInfo : CollabInfo, treeId : string) {
-  const currentCollabInfos = treeToCollabInfo.get(treeId);
-  if (currentCollabInfos) {
-    treeToCollabInfo.set(treeId, _.uniqBy([...currentCollabInfos, collabInfo], 'uuid'));
+function join(channels : ChannelMap, user : User, treeId : string) {
+  console.log('join', user.uuid, treeId);
+  const channelUsers = channels.get(treeId);
+  if (channelUsers) {
+    channels.set(treeId, _.uniqBy([...channelUsers, user], 'uuid'));
   } else {
-    treeToCollabInfo.set(treeId, [collabInfo]);
+    channels.set(treeId, [user]);
   }
 }
 
-function removeClientFromAllTreeChannels(treeToCollabInfo : CollabInfoMap, collabInfo : CollabInfo) {
-  for (const [treeId, collabInfos] of treeToCollabInfo) {
-    treeToCollabInfo.set(treeId, collabInfos.filter(ci => ci.uuid !== collabInfo.uuid));
+function disconnectUserByWS(channels : ChannelMap, ws : WebSocket) {
+  for (const [treeId, users] of channels) {
+    channels.set(treeId, users.filter(u => u.ws !== ws));
   }
-  deleteEmptyTreeChannels(treeToCollabInfo);
+  deleteEmptyTreeChannels(channels);
 }
 
-function removeClientFromAllTreeChannelsByWs(treeToCollabInfo : CollabInfoMap, ws : WebSocket) {
-  for (const [treeId, collabInfos] of treeToCollabInfo) {
-    treeToCollabInfo.set(treeId, collabInfos.filter(ci => ci.ws !== ws));
-  }
-  deleteEmptyTreeChannels(treeToCollabInfo);
-}
-
-function messageToTreeChannel(treeToCollabInfo : CollabInfoMap, treeId : string, message : any) {
-  const collabInfos = treeToCollabInfo.get(treeId);
-  if (collabInfos) {
-    for (const collabInfo of collabInfos) {
-      collabInfo.ws.send(JSON.stringify(message));
-    }
-  }
-}
-
-function messageToOthersInTreeChannel(treeToCollabInfo : CollabInfoMap, treeId : string, collabInfo : CollabInfo, message : any) {
-  const collabInfos = treeToCollabInfo.get(treeId);
-  if (collabInfos) {
-    for (const ci of collabInfos) {
-      if (ci.uuid !== collabInfo.uuid) {
-        ci.ws.send(JSON.stringify(message));
+function broadcastToChannel(channels : ChannelMap, treeId : string, senderUuid : string, message : any) {
+  const users = channels.get(treeId);
+  if (users) {
+    for (const u of users) {
+      if (u.uuid !== senderUuid) {
+        u.ws.send(JSON.stringify(message));
       }
     }
   }
 }
 
-function messageToOthersInTreeByWs(treeToCollabInfo : CollabInfoMap, ws : WebSocket, message : any) {
-  for (const [treeId, collabInfos] of treeToCollabInfo) {
-    for (const ci of collabInfos) {
-      if (ci.ws !== ws) {
-        ci.ws.send(JSON.stringify(message));
+function broadcastToChannelByWS(channels : ChannelMap, ws : WebSocket, message : any) {
+  for (const [treeId, users] of channels) {
+    for (const u of users) {
+      if (u.ws !== ws) {
+        u.ws.send(JSON.stringify(message));
       }
     }
   }
 }
 
-function deleteEmptyTreeChannels(treeToCollabInfo : CollabInfoMap) {
-  for (const [treeId, collabInfos] of treeToCollabInfo) {
-    if (collabInfos.length === 0) {
-      treeToCollabInfo.delete(treeId);
+function deleteEmptyTreeChannels(channels : ChannelMap) {
+  for (const [treeId, users] of channels) {
+    if (users.length === 0) {
+      channels.delete(treeId);
     }
   }
 }
 
-export function handleRT(treeToCollabInfo : CollabInfoMap, collabInfo : CollabInfo, treeId : string, message : any) {
-  addClientToTreeChannel(treeToCollabInfo, collabInfo, treeId);
-  messageToOthersInTreeChannel(treeToCollabInfo, treeId, collabInfo,
+export function handleRT(channels : ChannelMap, user : User, treeId : string, message : any) {
+  join(channels, user, treeId);
+  broadcastToChannel(channels, treeId, user.uuid,
     {
       t: 'rt',
       d: {
-        u: collabInfo.userId, uid: collabInfo.uuid, m: message
+        u: user.userId, uid: user.uuid, m: message
       }
     });
 }
 
-export function clientDisconnect(treeToCollabInfo : CollabInfoMap, ws: WebSocket) {
-  const collabInfo = [...treeToCollabInfo.values()].flatMap(x => x).find(ci => ci.ws === ws);
-  if (!collabInfo) { return; }
+export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
+  const user = [...channels.values()].flatMap(x => x).find(ci => ci.ws === ws);
+  if (!user) { return; }
 
-  messageToOthersInTreeByWs(treeToCollabInfo, ws,
+  broadcastToChannelByWS(channels, ws,
     {
       t: 'rt',
       d: {
-        u: collabInfo.userId, uid: collabInfo.uuid, m: ["d", ""]
+        u: user.userId, uid: user.uuid, m: ["d", ""]
       }
     });
-  removeClientFromAllTreeChannelsByWs(treeToCollabInfo, ws);
+  disconnectUserByWS(channels, ws);
 }
