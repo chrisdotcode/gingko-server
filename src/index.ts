@@ -193,8 +193,8 @@ _.mixin({
 const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
   debug(`Taking snapshot for tree ${treeId}`)
     takeSnapshotSQL.run({treeId});
-} , 15 * 1000 /* 15 seconds */
-  , { maxWait: 150 * 1000 /* 150 seconds */ }
+} , /* 6 hour debounce */ 6 * 60 * 60 * 1000
+  , { leading: true, trailing: false }
 );
 
 
