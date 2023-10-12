@@ -23,7 +23,7 @@ import Stripe from 'stripe';
 
 // Misc
 import _ from "lodash";
-import {expand, compact, SnapshotCompaction} from './snapshots.js';
+import {expand, compact, SnapshotCompaction, debounce} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
@@ -123,10 +123,10 @@ SELECT
 FROM cards WHERE treeId = @treeId AND deleted != 1
 `);
 const getSnapshots = db.prepare('SELECT * FROM tree_snapshots WHERE treeId = ? ORDER BY snapshot ASC');
-const getSnapshotIds = db.prepare('SELECT DISTINCT snapshot FROM tree_snapshots WHERE treeId = ? ORDER BY updatedAt DESC');
-const treeIdsWithSnapshots = db.prepare('SELECT DISTINCT treeId FROM tree_snapshots');
+const getSnapshotIdsUncompacted = db.prepare('SELECT DISTINCT snapshot FROM tree_snapshots WHERE treeId = ? AND delta = 0 ORDER BY updatedAt DESC');
+const treeIdsWithUncompactedSnapshots = db.prepare('SELECT DISTINCT treeId FROM tree_snapshots WHERE delta = 0').pluck();
+const filterSnapshots = db.prepare('DELETE FROM tree_snapshots WHERE treeId = ? AND snapshot NOT IN (SELECT value FROM json_each(?))');
 const removeSnapshot = db.prepare('DELETE FROM tree_snapshots WHERE snapshot = ? AND treeId = ?');
-const removeSnapshots = db.prepare('DELETE FROM tree_snapshots WHERE treeId = ? AND snapshot NOT IN (SELECT value FROM json_each(?))');
 const insertSnapshotDeltaRow = db.prepare('INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta) VALUES (@snapshot, @treeId, @id, @content, @parentId, @position, @updatedAt, 1);');
 const runCompactions = db.transaction((compactions : SnapshotCompaction[]) => {
   for(const compaction of compactions) {
@@ -157,26 +157,6 @@ const compactAllBefore = function(timestamp : number) {
   debug(`Compacting ${treeIds.length} trees`)
   if (treeIds.length > 0) {
     compactTreesTx.immediate(treeIds);
-  }
-}
-const decimateTreeSnapshots = function(treeId : string, desiredSnapshotsPerTreeId : number) {
-  const totalSnapshots = db.prepare('SELECT COUNT(DISTINCT snapshot) FROM tree_snapshots WHERE treeId = ?').pluck().get(treeId);
-  const N = Math.max(1, Math.floor(totalSnapshots / desiredSnapshotsPerTreeId));
-
-  const snapshotIds = getSnapshotIds.all(treeId).map((row) => row.snapshot);
-
-  // Filter these IDs to retain only every Nth ID
-  const retainedSnapshotIds = snapshotIds.filter((_, index) => index % N === 0);
-  console.log(retainedSnapshotIds)
-
-
-  // Delete the snapshots that are not in the retained list for the current treeId
-  removeSnapshots.run(treeId, JSON.stringify(retainedSnapshotIds));
-}
-const decimateAllSnapshots = function(desiredSnapshotsPerTreeId : number) {
-  const treeIds = treeIdsWithSnapshots.all().map((row) => row.treeId);
-  for (const treeId of treeIds) {
-    decimateTreeSnapshots(treeId, desiredSnapshotsPerTreeId);
   }
 }
 
@@ -934,18 +914,57 @@ app.get('/utils/compact', (req, res) => {
   }
 });
 
-app.get('/utils/decimate', (req, res) => {
+
+app.get('/utils/debounce/all', (req, res) => {
   if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
-    const numSnapshots = req.query.num;
-    debug(`Decimating all trees to ${numSnapshots} snapshots`);
-    decimateAllSnapshots(numSnapshots);
-    res.send("Decimating");
-  } else {
-    res.status(403).send("Forbidden");
+    const hours = req.query.h || 0;
+    const seconds = req.query.s || 0;
+    if (hours === 0 && seconds === 0) {
+      res.status(400).send("Must specify hours or seconds");
+      return;
+    }
+    const debounceMs = (hours * 60 * 60 * 1000) + (seconds * 1000);
+    const treeIdsToDebounce = treeIdsWithUncompactedSnapshots.all();
+    console.log('treeIdsToDebounce: ', treeIdsToDebounce);
+    db.transaction(() => {
+      for (const treeId of treeIdsToDebounce) {
+        runFilterSnapshots(treeId, debounceMs);
+      }
+    }).immediate();
+
+    res.send("Debounced");
   }
 });
 
 
+app.get('/utils/debounce/:treeId', (req, res) => {
+  if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+    const hours = req.query.h || 0;
+    const seconds = req.query.s || 0;
+    if (hours === 0 && seconds === 0) {
+      res.status(400).send("Must specify hours or seconds");
+      return;
+    }
+    const debounceMs = (hours * 60 * 60 * 1000) + (seconds * 1000);
+    const treeId = req.params.treeId;
+
+    runFilterSnapshots(treeId, debounceMs);
+    res.send("Debounced");
+  }
+});
+
+
+function runFilterSnapshots(treeId, debounceMs) {
+  const snapshots = getSnapshotIdsUncompacted.all(treeId);
+
+  const snapshotsToKeep = debounce(snapshots, debounceMs);
+  console.log('snapshotsToKeep: ', snapshotsToKeep)
+  debug(`Debounced tree ${treeId} to ${snapshotsToKeep.length} snapshots`);
+
+  const resultString = JSON.stringify(snapshotsToKeep.map(s => s.snapshot));
+  console.log('resultString: ', resultString)
+  filterSnapshots.run(treeId, resultString)
+}
 
 
 /* ==== Static ==== */

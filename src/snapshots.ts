@@ -8,14 +8,14 @@ import patch from 'textdiff-patch';
 // ===== TYPES =====
 
 export interface SnapshotCompaction {
-    snapshot: number;
+    snapshot: string;
     treeId: string;
     compactedData : SnapshotDeltaStringified[];
 }
 
 interface SnapshotRowBase{
     id: string;
-    snapshot: number;
+    snapshot: string;
     treeId: string;
     parentId: string | number;
     position: number | null;
@@ -204,4 +204,31 @@ function expandContent(baseContent : string, deltaContent : string) : string {
     } else {
         return deltaContent;
     }
+}
+
+
+// ====== Compacting by timeseries ======
+
+export function debounce(entries: SnapshotCard[], deltaMs: number): SnapshotCard[] {
+    const result: SnapshotCard[] = [];
+
+    if (entries.length === 0) return result;  // Handle empty input
+
+    result.push(entries[0]);  // Add the first entry
+
+    let currTime = Number.parseInt(entries[0].snapshot.split(':')[0]);
+
+    for (let i = 1; i < entries.length; i++) {
+        const nextTime = Number.parseInt(entries[i].snapshot.split(':')[0]);
+
+        if (nextTime - currTime >= deltaMs) {
+            result.push(entries[i - 1]);
+        }
+
+        currTime = nextTime;  // Update for the next iteration
+    }
+
+    result.push(entries[entries.length - 1]);  // Add the last entry
+
+    return result;
 }
