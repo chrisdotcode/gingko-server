@@ -409,12 +409,19 @@ wss.on('connection', (ws, req) => {
           treeCollaboratorsDelete.run(collabRemoveTreeId, collabRemoveEmail);
           break;
 
-        case 'rt':
-          const rtTreeId = msg.d.tr;
-          const uid = msg.d.uid;
-          const user = {uuid: uid, userId: userId, ws: ws};
-          realtime.handleRT(channels, user, rtTreeId, msg.d.m);
+        case 'rt': {
+          realtime.handleRT(channels, userId, msg.d);
           break;
+        }
+
+        case 'rt:join': {
+          const treeId = msg.d.tr;
+          const uid = msg.d.uid;
+          realtime.join(channels, uid, userId, ws, treeId);
+          break;
+        }
+
+
 
         default:
           console.error('Unknown message type: ', msg.t)
