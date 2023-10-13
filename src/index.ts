@@ -22,7 +22,7 @@ import config from "../config.js";
 import Stripe from 'stripe';
 
 // Misc
-import _ from "lodash";
+import _, {forEach} from "lodash";
 import {expand, compact, SnapshotCompaction, debounce} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
@@ -68,20 +68,19 @@ const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeById = db.prepare('SELECT * FROM trees WHERE id = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare(`
-INSERT INTO trees(id, name, location, owner, collaborators, inviteUrl, createdAt, updatedAt, deletedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO trees(id, name, location, owner, inviteUrl, createdAt, updatedAt, deletedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   location = excluded.location,
   owner = excluded.owner,
-  collaborators = excluded.collaborators,
   inviteUrl = excluded.inviteUrl,
   updatedAt = excluded.updatedAt,
   deletedAt = excluded.deletedAt;
 `);
 const upsertMany = db.transaction((trees) => {
     for (const tree of trees) {
-        treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.collaborators, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
+        treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
     }
 });
 
@@ -254,7 +253,7 @@ wss.on('connection', (ws, req) => {
 
   const userTrees = treesByOwner.all(userId);
   const sharedWithUserTrees = treesSharedWithUser.all(userId);
-  ws.send(JSON.stringify({t: "trees", d: [...userTrees, ...sharedWithUserTrees]}));
+  ws.send(JSON.stringify({t: "trees", d: treesMsgData([...userTrees, ...sharedWithUserTrees])}));
 
   ws.on('message', function incoming(message) {
     try {
@@ -268,10 +267,13 @@ wss.on('connection', (ws, req) => {
         case "trees":
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
+
+          // TODO: This is where we'd notify other users of the trees changed
+          // We'd need to get a list of who to notify *by tree* so that we don't send
+          // notifications to users who aren't subscribed to the tree
           const usersToNotify = msg.d.map(tree => tree.owner);
           for (const [otherWs, userId] of wsToUser) {
             if (usersToNotify.includes(userId) && otherWs !== ws) {
-              //console.log('also sending via notification')
               otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
             }
           }
@@ -379,9 +381,9 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
           break;
 
-        case 'collab.add':
-          const collabEmail = msg.d.email;
-          const collabTreeId = msg.d.treeId;
+        case 'rt:addCollab':
+          const collabEmail = msg.d.c;
+          const collabTreeId = msg.d.tr;
           const collabTree = treeById.get(collabTreeId);
           if (collabTree.owner !== userId) {
             ws.send(JSON.stringify({t: 'collab.addError', d: 'Only the owner can add collaborators'}));
@@ -389,6 +391,7 @@ wss.on('connection', (ws, req) => {
           }
           try {
             treeCollaboratorsInsert.run(collabTreeId, collabEmail);
+            ws.send(JSON.stringify({t: 'collab.addOk', d: [collabTreeId, collabEmail]}));
           } catch (e) {
             if (e.code && e.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
               ws.send(JSON.stringify({t: 'collab.addError', d: 'User does not exist'}));
@@ -398,15 +401,16 @@ wss.on('connection', (ws, req) => {
           }
           break;
 
-        case 'collab.remove':
-          const collabRemoveEmail = msg.d.email;
-          const collabRemoveTreeId = msg.d.treeId;
+        case 'rt:removeCollab':
+          const collabRemoveEmail = msg.d.c;
+          const collabRemoveTreeId = msg.d.tr;
           const collabRemoveTree = treeById.get(collabRemoveTreeId);
           if (collabRemoveTree.owner !== userId) {
             ws.send(JSON.stringify({t: 'collab.removeError', d: 'Only the owner can remove collaborators'}));
             break;
           }
           treeCollaboratorsDelete.run(collabRemoveTreeId, collabRemoveEmail);
+          ws.send(JSON.stringify({t: 'collab.removeOk', d: [collabRemoveTreeId, collabRemoveEmail]}));
           break;
 
         case 'rt': {
@@ -604,9 +608,11 @@ function doLogin(req, res, user) {
       if(err) { console.log(err); }
 
       const userTrees = treesByOwner.all(user.id);
+      const sharedWithUserTrees = treesSharedWithUser.all(user.id);
+      const allTrees = [...userTrees, ...sharedWithUserTrees];
       let data = _.omit(user, ['id', 'email', 'password', 'salt']);
       data.email = user.id;
-      data.documents = userTrees;
+      data.documents = treesMsgData(allTrees);
 
       res.status(200).send(data);
     })
@@ -1156,6 +1162,13 @@ function sendUpdatedUserData(email) {
       ws.send(JSON.stringify({ t: "user", d: userData}));
     })
   }
+}
+
+function treesMsgData(trees) {
+  return trees.map(tree => {
+    const collaborators = treeCollaboratorsByTree.all(tree.id);
+    return {...tree, collaborators};
+  })
 }
 
 function toHex(str) {
