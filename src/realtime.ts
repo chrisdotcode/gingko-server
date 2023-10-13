@@ -1,5 +1,7 @@
 import _ from "lodash";
 
+/* ==== TYPES ==== */
+
 export type User =
   { uuid: string
   , userId: string
@@ -21,6 +23,11 @@ type MessageData =
     u: string,
     m: ['a', string] | ['e', string] | ['d', string]
   };
+
+
+
+
+/* ==== PRIVATE FUNCTIONS ==== */
 
 function disconnectUserByWS(channels : ChannelMap, ws : WebSocket) {
   for (const [treeId, users] of channels) {
@@ -77,6 +84,11 @@ function updateMode(channels : ChannelMap, uuid : string, mode : ['a', string] |
   }
 }
 
+
+
+
+/* ==== PUBLIC FUNCTIONS ==== */
+
 export function handleRT(channels : ChannelMap, userId: string, msgData : MessageData) {
   updateMode(channels, msgData.uid, msgData.m);
   broadcastToChannel(channels, msgData.tr, msgData.uid,
@@ -84,52 +96,47 @@ export function handleRT(channels : ChannelMap, userId: string, msgData : Messag
       t: 'rt',
       d: _.omit({...msgData, u: userId}, 'tr')
     });
-
-  console.log('channels after handleRT', stringifyMField(channels));
+  console.log('channels after handleRT', stringifyChannels(channels));
 }
 
-function stringifyMField(channels: ChannelMap): Map<string, string[]> {
-  // Create a new Map to store the results
-  const result = new Map<string, string[]>();
+export function join(channels : ChannelMap, userId: string, ws: WebSocket, msgData : MessageData) {
+  console.log('joining channel', msgData.tr, msgData.uid);
+  const { uid: uuid, tr: treeId, m } = msgData;
+  const channelUsers = channels.get(treeId) || [];
+  const user: User = { uuid, userId, ws, m: messageToMode(m) };
 
-  // Iterate over each entry in the channels
-  for (const [treeId, users] of channels.entries()) {
-    // Map each user's m field to a string and store in the result
-    result.set(treeId, users.map(user => JSON.stringify(user.m)));
-  }
-
-  return result;
-}
-
-
-export function join(channels : ChannelMap, uuid : string, userId: string, ws: WebSocket, treeId : string) {
-  const channelUsers = channels.get(treeId);
-  const user: User = { uuid, userId, ws, m: { kind: 'viewing', cardId: '' } };
-
-  if (channelUsers) {
-    channels.set(treeId, _.uniqBy([...channelUsers, user], 'uuid'));
-    const otherUsers = channelUsers.filter(u => u.uuid !== user.uuid);
-    ws.send(JSON.stringify({
-      t: 'rt:users',
-      d: otherUsers.map(u => ({uid: u.uuid, u: u.userId, m: modeToMessage(u.m)}))
-    }));
-  } else {
+  // Add user to channel
+  if (channelUsers.length === 0) {
     channels.set(treeId, [user]);
+  } else {
+    channels.set(treeId, _.uniqBy([...channelUsers, user], 'uuid'));
   }
-  console.log('channels after join', channels);
-}
 
-function modeToMessage(m : Mode) {
-  switch (m.kind) {
-    case 'viewing':
-      return ['a', m.cardId];
-    case 'editing':
-      return ['e', m.cardId];
+  // Remove user from other channels
+  for (const [otherTreeId, otherUsers] of channels) {
+    if (otherTreeId !== treeId) {
+      channels.set(otherTreeId, otherUsers.filter(u => u.uuid !== uuid));
+    }
+    broadcastToChannel(channels, otherTreeId, uuid, {
+      t: 'rt',
+      d: {uid: uuid, u: userId, m: ["d", ""]}
+    })
   }
+
+  // Respond with other users in channel
+  const otherUsersInChannel = channelUsers.filter(u => u.uuid !== user.uuid);
+  console.log('sending users', otherUsersInChannel.map(u => _.omit(u, 'ws')));
+  ws.send(JSON.stringify({
+    t: 'rt:users',
+    d: otherUsersInChannel.map(u => ({uid: u.uuid, u: u.userId, m: modeToMessage(u.m)}))
+  }));
+
+  console.log('channels after join', stringifyChannels(channels));
 }
 
 
 export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
+  console.log('disconnecting websocket')
   const user = [...channels.values()].flatMap(x => x).find(ci => ci.ws === ws);
   if (!user) { return; }
 
@@ -141,4 +148,48 @@ export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
       }
     });
   disconnectUserByWS(channels, ws);
+  console.log('channels after disconnect', stringifyChannels(channels));
+}
+
+
+
+
+/* ==== UTILITY FUNCTIONS ==== */
+
+function modeToMessage(m : Mode) {
+  switch (m.kind) {
+    case 'viewing':
+      return ['a', m.cardId];
+    case 'editing':
+      return ['e', m.cardId];
+  }
+}
+
+function messageToMode(m : ['a', string] | ['e', string] | ['d', string] | null) : Mode {
+  if (!m) { return { kind: 'viewing', cardId: '' }; }
+
+  switch (m[0]) {
+    case 'a':
+      return { kind: 'viewing', cardId: m[1] };
+    case 'e':
+      return { kind: 'editing', cardId: m[1] };
+    case 'd':
+      return { kind: 'viewing', cardId: '' };
+  }
+}
+
+
+type UserWithStringifiedM = {uuid: string, userId: string, m: string};
+
+function stringifyChannels(channels: ChannelMap): Map<string, UserWithStringifiedM[]> {
+  // Create a new Map to store the results
+  const result = new Map<string, UserWithStringifiedM[]>();
+
+  // Iterate over each entry in the channels
+  for (const [treeId, users] of channels.entries()) {
+    // Map each user's m field to a string and store in the result
+    result.set(treeId, users.map(({m, ws,...rest}) => ({...rest, m: JSON.stringify(m)})));
+  }
+
+  return result;
 }

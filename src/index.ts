@@ -415,9 +415,7 @@ wss.on('connection', (ws, req) => {
         }
 
         case 'rt:join': {
-          const treeId = msg.d.tr;
-          const uid = msg.d.uid;
-          realtime.join(channels, uid, userId, ws, treeId);
+          realtime.join(channels, userId, ws, msg.d);
           break;
         }
 
