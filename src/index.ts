@@ -78,9 +78,12 @@ ON CONFLICT(id) DO UPDATE SET
   updatedAt = excluded.updatedAt,
   deletedAt = excluded.deletedAt;
 `);
-const upsertMany = db.transaction((trees) => {
+const upsertMany = db.transaction((requesterId, trees) => {
     for (const tree of trees) {
-        treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
+        const owner = treeOwner.get(tree.id);
+        if (requesterId === owner) {
+          treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
+        }
     }
 });
 
@@ -265,7 +268,7 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(message);
       switch (msg.t) {
         case "trees": {
-          upsertMany(msg.d);
+          upsertMany(userId, msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
           const treeIds = msg.d.map(t => t.id);
 
@@ -911,7 +914,7 @@ app.post('/test/expired', async (req, res) => {
 app.post('/test/trees', async (req, res) => {
   const trees = req.body;
   try {
-    upsertMany(trees);
+    upsertMany("cypress@testing.com", trees);
     res.status(200).send();
   } catch (err) {
     console.error(err);
