@@ -228,7 +228,7 @@ function heartbeat() {
 
 const wss = new WebSocketServer({noServer: true});
 const wsToUser = new Map();
-const userToWs = new Map();
+const userToWs = new Map<string, Set<WebSocket>>();
 const channels = new Map<string, realtime.User[]>();
 
 wss.on('connection', (ws, req) => {
@@ -253,7 +253,7 @@ wss.on('connection', (ws, req) => {
 
   const userTrees = treesByOwner.all(userId);
   const sharedWithUserTrees = treesSharedWithUser.all(userId);
-  ws.send(JSON.stringify({t: "trees", d: treesMsgData([...userTrees, ...sharedWithUserTrees])}));
+  ws.send(JSON.stringify({t: "trees", d: withCollaboratorArrays([...userTrees, ...sharedWithUserTrees])}));
 
   ws.on('message', function incoming(message) {
     try {
@@ -264,20 +264,23 @@ wss.on('connection', (ws, req) => {
 
       const msg = JSON.parse(message);
       switch (msg.t) {
-        case "trees":
+        case "trees": {
           upsertMany(msg.d);
           ws.send(JSON.stringify({t: "treesOk", d: msg.d.sort((a, b) => a.createdAt - b.createdAt)[0].updatedAt}));
+          const treeIds = msg.d.map(t => t.id);
 
-          // TODO: This is where we'd notify other users of the trees changed
-          // We'd need to get a list of who to notify *by tree* so that we don't send
-          // notifications to users who aren't subscribed to the tree
-          const usersToNotify = msg.d.map(tree => tree.owner);
-          for (const [otherWs, userId] of wsToUser) {
-            if (usersToNotify.includes(userId) && otherWs !== ws) {
-              otherWs.send(JSON.stringify({t: "trees", d: treesByOwner.all(userId)}));
+          // send a message to all users in the tree channels, except for the user who sent the message
+          for (const [treeId, users] of channels) {
+            if (treeIds.includes(treeId)) {
+              for (const u of users) {
+                if (u.ws !== ws) {
+                  u.ws.send(JSON.stringify({t: 'trees', d: withCollaboratorArrays([treeById.get(treeId)])}));
+                }
+              }
             }
           }
           break;
+        }
 
         case 'pull':
           if (msg.d[1] == '0') {
@@ -381,17 +384,26 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({t: 'userSettingOk', d: ['language', msg.d]}));
           break;
 
-        case 'rt:addCollab':
+        case 'rt:addCollab': {
           const collabEmail = msg.d.c;
-          const collabTreeId = msg.d.tr;
-          const collabTree = treeById.get(collabTreeId);
+          const treeId = msg.d.tr;
+          const collabTree = treeById.get(treeId);
           if (collabTree.owner !== userId) {
             ws.send(JSON.stringify({t: 'collab.addError', d: 'Only the owner can add collaborators'}));
             break;
           }
           try {
-            treeCollaboratorsInsert.run(collabTreeId, collabEmail);
-            ws.send(JSON.stringify({t: 'collab.addOk', d: [collabTreeId, collabEmail]}));
+            treeCollaboratorsInsert.run(treeId, collabEmail);
+            ws.send(JSON.stringify({t: 'trees', d: withCollaboratorArrays([treeById.get(treeId)])}));
+
+            // Get the collaborator's ws and send them the tree with the new collaborator array
+            const collabWsSet = userToWs.get(collabEmail);
+            if (collabWsSet) {
+              for (const collabWs of collabWsSet) {
+                collabWs.send(JSON.stringify({t: 'trees', d: withCollaboratorArrays([treeById.get(treeId)])}));
+              }
+            }
+
           } catch (e) {
             if (e.code && e.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
               ws.send(JSON.stringify({t: 'collab.addError', d: 'User does not exist'}));
@@ -400,18 +412,28 @@ wss.on('connection', (ws, req) => {
             }
           }
           break;
+        }
 
-        case 'rt:removeCollab':
-          const collabRemoveEmail = msg.d.c;
-          const collabRemoveTreeId = msg.d.tr;
-          const collabRemoveTree = treeById.get(collabRemoveTreeId);
-          if (collabRemoveTree.owner !== userId) {
+        case 'rt:removeCollab': {
+          const collabEmail = msg.d.c;
+          const treeId = msg.d.tr;
+          const collabTree = treeById.get(treeId);
+          if (collabTree.owner !== userId) {
             ws.send(JSON.stringify({t: 'collab.removeError', d: 'Only the owner can remove collaborators'}));
             break;
           }
-          treeCollaboratorsDelete.run(collabRemoveTreeId, collabRemoveEmail);
-          ws.send(JSON.stringify({t: 'collab.removeOk', d: [collabRemoveTreeId, collabRemoveEmail]}));
+          treeCollaboratorsDelete.run(treeId, collabEmail);
+          ws.send(JSON.stringify({t: 'trees', d: withCollaboratorArrays([treeById.get(treeId)])}));
+
+          // Get the collaborator's ws and send them the tree with the new collaborator array
+          const collabWsSet = userToWs.get(collabEmail);
+          if (collabWsSet) {
+            for (const collabWs of collabWsSet) {
+              collabWs.send(JSON.stringify({t: 'removedFrom', d: treeId }));
+            }
+          }
           break;
+        }
 
         case 'rt': {
           realtime.handleRT(channels, userId, msg.d);
@@ -612,7 +634,7 @@ function doLogin(req, res, user) {
       const allTrees = [...userTrees, ...sharedWithUserTrees];
       let data = _.omit(user, ['id', 'email', 'password', 'salt']);
       data.email = user.id;
-      data.documents = treesMsgData(allTrees);
+      data.documents = withCollaboratorArrays(allTrees);
 
       res.status(200).send(data);
     })
@@ -1164,7 +1186,7 @@ function sendUpdatedUserData(email) {
   }
 }
 
-function treesMsgData(trees) {
+function withCollaboratorArrays(trees) {
   return trees.map(tree => {
     const collaborators = treeCollaboratorsByTree.all(tree.id);
     return {...tree, collaborators};
