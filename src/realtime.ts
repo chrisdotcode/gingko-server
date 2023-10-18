@@ -96,11 +96,9 @@ export function handleRT(channels : ChannelMap, userId: string, msgData : Messag
       t: 'rt',
       d: _.omit({...msgData, u: userId}, 'tr')
     });
-  console.log('channels after handleRT', stringifyChannels(channels));
 }
 
 export function join(channels : ChannelMap, userId: string, ws: WebSocket, msgData : MessageData) {
-  console.log('joining channel', msgData.tr, msgData.uid);
   const { uid: uuid, tr: treeId, m } = msgData;
   const channelUsers = channels.get(treeId) || [];
   const user: User = { uuid, userId, ws, m: messageToMode(m) };
@@ -125,18 +123,15 @@ export function join(channels : ChannelMap, userId: string, ws: WebSocket, msgDa
 
   // Respond with other users in channel
   const otherUsersInChannel = channelUsers.filter(u => u.uuid !== user.uuid);
-  console.log('sending users', otherUsersInChannel.map(u => _.omit(u, 'ws')));
   ws.send(JSON.stringify({
     t: 'rt:users',
     d: otherUsersInChannel.map(u => ({uid: u.uuid, u: u.userId, m: modeToMessage(u.m)}))
   }));
 
-  console.log('channels after join', stringifyChannels(channels));
 }
 
 
 export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
-  console.log('disconnecting websocket')
   const user = [...channels.values()].flatMap(x => x).find(ci => ci.ws === ws);
   if (!user) { return; }
 
@@ -148,7 +143,6 @@ export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
       }
     });
   disconnectUserByWS(channels, ws);
-  console.log('channels after disconnect', stringifyChannels(channels));
 }
 
 
