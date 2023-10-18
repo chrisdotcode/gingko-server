@@ -78,12 +78,15 @@ ON CONFLICT(id) DO UPDATE SET
   updatedAt = excluded.updatedAt,
   deletedAt = excluded.deletedAt;
 `);
-const upsertMany = db.transaction((requesterId, trees) => {
-    for (const tree of trees) {
-        const owner = treeOwner.get(tree.id);
-        if (requesterId === owner) {
-          treeUpsert.run(tree.id, tree.name, tree.location, tree.owner, tree.inviteUrl, tree.createdAt, tree.updatedAt, tree.deletedAt);
-        }
+const upsertMany = db.transaction((requesterId, treesRecvd) => {
+    for (const treeRecvd of treesRecvd) {
+      const treeInDb = treeById.get(treeRecvd.id);
+      if (treeInDb && treeInDb.owner !== treeRecvd.owner) {
+        console.error(`User ${requesterId} attempted to update tree ${treeRecvd.id} owned by ${treeInDb.owner}`);
+        continue;
+      }
+
+      treeUpsert.run(treeRecvd.id, treeRecvd.name, treeRecvd.location, treeRecvd.owner, treeRecvd.inviteUrl, treeRecvd.createdAt, treeRecvd.updatedAt, treeRecvd.deletedAt);
     }
 });
 
