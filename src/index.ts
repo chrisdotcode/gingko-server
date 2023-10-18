@@ -22,7 +22,7 @@ import config from "../config.js";
 import Stripe from 'stripe';
 
 // Misc
-import _, {forEach} from "lodash";
+import _ from "lodash";
 import {expand, compact, SnapshotCompaction, debounce} from './snapshots.js';
 import nodePandoc from "node-pandoc";
 import URLSafeBase64 from "urlsafe-base64";
@@ -97,11 +97,6 @@ const treeCollaboratorsDelete = db.prepare('DELETE FROM tree_collaborators WHERE
 const treeCollaboratorsByTree = db.prepare('SELECT user_id FROM tree_collaborators WHERE tree_id = ?').pluck();
 const treeIdsSharedWithUser = db.prepare('SELECT tree_id FROM tree_collaborators WHERE user_id = ?').pluck();
 const treesSharedWithUser = db.prepare('SELECT * FROM trees WHERE id IN (SELECT tree_id FROM tree_collaborators WHERE user_id = ?)');
-
-// Invite Token Table
-db.exec('CREATE TABLE IF NOT EXISTS inviteTokens (token TEXT PRIMARY KEY, treeId TEXT, email TEXT, createdAt INTEGER)');
-const addInviteToken = db.prepare('INSERT OR REPLACE INTO inviteTokens (token, treeId, email, createdAt) VALUES (?, ?, ?, ?)');
-const getInviteToken = db.prepare('SELECT * FROM inviteTokens WHERE token = ?');
 
 // Cards Table
 db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
