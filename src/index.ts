@@ -341,7 +341,7 @@ wss.on('connection', (ws, req) => {
           } catch (e) {
             if (e instanceof ConflictError) {
               const cards = cardsSince.all(msg.d.tr, msg.d.chk);
-              debug('conflict cards: ', cards.map(c => c.updatedAt))
+              console.error(e, cards);
               if (cards.length === 0 && e.conflict) {
                 cards.push(e.conflict);
               }
