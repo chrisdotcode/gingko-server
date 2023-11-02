@@ -47,13 +47,18 @@ function broadcastToChannel(channels : ChannelMap, treeId : string, senderUuid :
   }
 }
 
-function broadcastToChannelByWS(channels : ChannelMap, ws : WebSocket, message : any) {
+function broadcastToChannelByWS(channels: ChannelMap, ws: WebSocket, senderUuid: string, message: any) {
+  let channelToBroadcast: string | null = null;
+
   for (const [treeId, users] of channels) {
-    for (const u of users) {
-      if (u.ws !== ws) {
-        u.ws.send(JSON.stringify(message));
-      }
+    if (users.some(u => u.ws === ws)) {
+      channelToBroadcast = treeId;
+      break;
     }
+  }
+
+  if (channelToBroadcast) {
+    broadcastToChannel(channels, channelToBroadcast, senderUuid, message);
   }
 }
 
@@ -112,13 +117,14 @@ export function join(channels : ChannelMap, userId: string, ws: WebSocket, msgDa
 
   // Remove user from other channels
   for (const [otherTreeId, otherUsers] of channels) {
-    if (otherTreeId !== treeId) {
+    if (otherTreeId !== treeId && otherUsers.some(u => u.uuid === uuid)) {
       channels.set(otherTreeId, otherUsers.filter(u => u.uuid !== uuid));
+
+      broadcastToChannel(channels, otherTreeId, uuid, {
+        t: 'rt',
+        d: {uid: uuid, u: userId, m: ["d", ""]}
+      })
     }
-    broadcastToChannel(channels, otherTreeId, uuid, {
-      t: 'rt',
-      d: {uid: uuid, u: userId, m: ["d", ""]}
-    })
   }
 
   // Respond with other users in channel
@@ -135,7 +141,7 @@ export function disconnectWebSocket(channels : ChannelMap, ws: WebSocket) {
   const user = [...channels.values()].flatMap(x => x).find(ci => ci.ws === ws);
   if (!user) { return; }
 
-  broadcastToChannelByWS(channels, ws,
+  broadcastToChannelByWS(channels, ws, user.uuid,
     {
       t: 'rt',
       d: {
