@@ -205,14 +205,13 @@ const server = app.listen(port, () => console.log(`Example app listening at http
 const RedisStore = redisConnect(session);
 const redis = createClient({legacyMode: true});
 
-app.set('trust proxy', 1) // trust first proxy
 const sessionParser = session({
     store: new RedisStore({ client: redis }),
     secret: config.SESSION_SECRET,
     resave: false, // required: force lightweight session keep alive (touch)
     rolling: true, // optional: reset maxAge on every response
     saveUninitialized: false, // recommended: don't save empty sessions
-    cookie: { secure: 'auto', maxAge: /* 6 months */ 6 * 30 * 24 * 60 * 60 * 1000 }
+    cookie: { secure: false, maxAge: /* 6 months */ 6 * 30 * 24 * 60 * 60 * 1000 }
 });
 redis.connect().catch(console.error);
 
