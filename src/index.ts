@@ -204,12 +204,15 @@ const server = app.listen(port, () => console.log(`Example app listening at http
 
 const RedisStore = redisConnect(session);
 const redis = createClient({legacyMode: true});
+
+app.set('trust proxy', 1) // trust first proxy
 const sessionParser = session({
     store: new RedisStore({ client: redis }),
     secret: config.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false, maxAge: /* 14 days */ 1209600000 }
+    resave: false, // required: force lightweight session keep alive (touch)
+    rolling: true, // optional: reset maxAge on every response
+    saveUninitialized: false, // recommended: don't save empty sessions
+    cookie: { secure: 'auto', maxAge: /* 6 months */ 6 * 30 * 24 * 60 * 60 * 1000 }
 });
 redis.connect().catch(console.error);
 
@@ -507,6 +510,11 @@ server.on('upgrade', async (request, socket, head) => {
         wss.emit('connection', ws, request);
       });
     } else {
+      if (request.session) {
+        console.error('Session user not found:', request.session)
+      } else {
+        console.error('Session not found');
+      }
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -563,24 +571,21 @@ app.post('/signup', async (req, res) => {
       }
     }
 
-    req.session.regenerate((err) => {
+    req.session.user = email;
+
+    // Calling save manually to generate CouchDB user
+    req.session.save(async (err) => {
       if(err) { console.error(err); }
 
-      req.session.user = email;
+      await nano.db.create(userDbName);
 
-      req.session.save(async (err) => {
-        if(err) { console.error(err); }
+      //@ts-ignore
+      await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
 
-        await nano.db.create(userDbName);
+      let data = _.omit(user, ['id', 'email', 'password', 'salt']);
+      data.email = user.id;
 
-        //@ts-ignore
-        await nano.request({db: userDbName, method: 'put', path: '/_security', body: {members: {names: [email], roles: []}}});
-
-        let data = _.omit(user, ['id', 'email', 'password', 'salt']);
-        data.email = user.id;
-
-        res.status(200).send(data);
-      })
+      res.status(200).send(data);
     })
   } catch (e) {
     if (e.code && e.code === "SQLITE_CONSTRAINT_PRIMARYKEY") {
@@ -606,11 +611,7 @@ app.post('/login', async (req, res) => {
         if (err) throw err;
         if (derivedKey.toString(encoding) === user.password) {
           // Authentication successful
-          try {
-            doLogin(req, res, user);
-          } catch (loginErr) {
-            console.error(loginErr);
-          }
+          doLogin(req, res, user);
         } else {
           res.status(401).send();
         }
@@ -622,23 +623,22 @@ app.post('/login', async (req, res) => {
 });
 
 function doLogin(req, res, user) {
-  req.session.regenerate(function(err) {
-    if(err) { console.log(err); }
+  req.session.user = user.id;
 
-    req.session.user = user.id;
+  req.session.save((err) => {
+    if(err) {
+      res.status(500).send({error: "Internal server error at doLogin"});
+      console.error(err);
+    }
 
-    req.session.save(async (err) => {
-      if(err) { console.log(err); }
+    const userTrees = treesByOwner.all(user.id);
+    const sharedWithUserTrees = treesSharedWithUser.all(user.id);
+    const allTrees = [...userTrees, ...sharedWithUserTrees];
+    let data = _.omit(user, ['id', 'email', 'password', 'salt']);
+    data.email = user.id;
+    data.documents = withCollaboratorArrays(allTrees);
 
-      const userTrees = treesByOwner.all(user.id);
-      const sharedWithUserTrees = treesSharedWithUser.all(user.id);
-      const allTrees = [...userTrees, ...sharedWithUserTrees];
-      let data = _.omit(user, ['id', 'email', 'password', 'salt']);
-      data.email = user.id;
-      data.documents = withCollaboratorArrays(allTrees);
-
-      res.status(200).send(data);
-    })
+    res.status(200).send(data);
   });
 }
 
