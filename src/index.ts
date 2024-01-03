@@ -209,7 +209,6 @@ const sessionParser = session({
     store: new RedisStore({ client: redis }),
     secret: config.SESSION_SECRET,
     resave: false, // required: force lightweight session keep alive (touch)
-    rolling: true, // optional: reset maxAge on every response
     saveUninitialized: false, // recommended: don't save empty sessions
     cookie: { secure: false, maxAge: /* 6 months */ 6 * 30 * 24 * 60 * 60 * 1000 }
 });
@@ -1008,6 +1007,9 @@ app.use(express.static("../client/web"));
 
 // Respond to all non-file requests with index.html
 app.get('*', (req, res) => {
+  if (req.session) {
+    req.session.lastAccessed = Date.now();
+  }
   const index = new URL('../../client/web/index.html', import.meta.url).pathname;
   res.sendFile(index);
 });
