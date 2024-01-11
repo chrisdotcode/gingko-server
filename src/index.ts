@@ -573,7 +573,10 @@ app.post('/signup', async (req, res) => {
 
     // Calling save manually to generate CouchDB user
     req.session.save(async (err) => {
-      if(err) { console.error(err); }
+      if(err) {
+        console.error(err);
+        res.status(500).send({error: "Internal server error at signup"});
+      }
 
       await nano.db.create(userDbName);
 
@@ -642,7 +645,7 @@ function doLogin(req, res, user) {
 
 
 app.post('/logout', async (req, res) => {
-  if (req.session.user) {
+  if (req.session) {
     req.session.destroy((err) => {
       if(err) { console.log(err); }
       res.clearCookie("connect.sid").status(200).send();
