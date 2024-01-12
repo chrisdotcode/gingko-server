@@ -494,6 +494,24 @@ wss.on('error', (err) => {
   console.error(err);
 });
 
+
+app.head('/session', (req, res) => {
+  if (req.session) {
+    if (req.session.user) {
+      res.status(200).send();
+    } else {
+      // Session found without user field
+      console.error('Session user not found:', req.session)
+      req.session.destroy((err) => {
+        if(err) { console.log(err); }
+        res.status(401).send();
+      });
+    }
+  } else {
+    res.status(401).send();
+  }
+});
+
 server.on('upgrade', async (request, socket, head) => {
   sessionParser(request, {}, (err) => {
     if (err) {
@@ -843,6 +861,8 @@ app.post('/hooks', async (req, res) => {
 });
 
 
+
+
 /* ==== Mail confirmation ==== */
 
 let confirmedHandler = (email) => {
@@ -866,6 +886,9 @@ app.post('/mlhooks', async (req, res) => {
   // Return a res to acknowledge receipt of the event
   res.json({received: true});
 });
+
+
+
 
 /* ==== Export ==== */
 
@@ -931,6 +954,10 @@ app.post('/test/confirm', async (req, res) => {
   }
 });
 
+
+
+
+/* ==== Utils ==== */
 
 app.get('/utils/compact', (req, res) => {
   if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
