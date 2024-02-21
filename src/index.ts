@@ -753,9 +753,7 @@ app.get('/public/:page', (req, res) => {
     return;
   }
 
-  console.log('public page', req.params.page);
   const rawTree = treeByPublicUrl.get(req.params.page);
-  console.log('tree', rawTree);
 
   if (!rawTree) {
     res.status(404).send();
