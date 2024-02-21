@@ -66,15 +66,17 @@ db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, locat
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeById = db.prepare('SELECT * FROM trees WHERE id = ?');
+const treeByPublicUrl = db.prepare('SELECT * FROM trees WHERE publicUrl = ?');
 const treesModdedBeforeWithSnapshots = db.prepare('SELECT DISTINCT t.id FROM trees t JOIN tree_snapshots ts ON t.id = ts.treeId WHERE ts.delta = 0 AND t.updatedAt < ? ORDER BY t.updatedAt ASC');
 const treeUpsert = db.prepare(`
-INSERT INTO trees(id, name, location, owner, inviteUrl, createdAt, updatedAt, deletedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO trees(id, name, location, owner, inviteUrl, publicUrl, createdAt, updatedAt, deletedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   location = excluded.location,
   owner = excluded.owner,
   inviteUrl = excluded.inviteUrl,
+  publicUrl = excluded.publicUrl,
   updatedAt = excluded.updatedAt,
   deletedAt = excluded.deletedAt;
 `);
@@ -86,7 +88,7 @@ const upsertMany = db.transaction((requesterId, treesRecvd) => {
         continue;
       }
 
-      treeUpsert.run(treeRecvd.id, treeRecvd.name, treeRecvd.location, treeRecvd.owner, treeRecvd.inviteUrl, treeRecvd.createdAt, treeRecvd.updatedAt, treeRecvd.deletedAt);
+      treeUpsert.run(treeRecvd.id, treeRecvd.name, treeRecvd.location, treeRecvd.owner, treeRecvd.inviteUrl, treeRecvd.publicUrl, treeRecvd.createdAt, treeRecvd.updatedAt, treeRecvd.deletedAt);
     }
 });
 
@@ -740,6 +742,24 @@ app.post('/reset-password', async (req, res) => {
     console.error(err)
     res.status(err.response.status).send(err.response.data);
   }
+});
+
+
+/* ==== Public Pages ==== */
+
+app.get('/public/:page', (req, res) => {
+  console.log('public page', req.params.page);
+  const rawTree = treeByPublicUrl.get(req.params.page);
+  console.log('tree', rawTree);
+
+  if (!rawTree) {
+    res.status(404).send();
+    return;
+  }
+
+  const tree = _.pick(rawTree, ['id', 'name', 'createdAt', 'updatedAt']);
+  const cards = cardsAllUndeleted.all(tree.id);
+  res.send({tree, cards});
 });
 
 
