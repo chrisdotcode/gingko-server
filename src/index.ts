@@ -748,6 +748,11 @@ app.post('/reset-password', async (req, res) => {
 /* ==== Public Pages ==== */
 
 app.get('/public/:page', (req, res) => {
+  if (!(req.subdomains[0] === 'public')) {
+    res.status(404).send();
+    return;
+  }
+
   console.log('public page', req.params.page);
   const rawTree = treeByPublicUrl.get(req.params.page);
   console.log('tree', rawTree);
