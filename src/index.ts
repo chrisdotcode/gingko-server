@@ -677,7 +677,12 @@ app.post('/logout', async (req, res) => {
 app.post('/forgot-password', async (req, res) => {
   let email = req.body.email;
   try {
-    let user = userByEmail.run(email);
+    let user = userByEmail.get(email);
+
+    if (!user) {
+      res.status(404).send();
+      return;
+    }
 
     let token = newToken();
     user.resetToken = hashToken(token); // Consider not hashing token for test user, so we can check it
