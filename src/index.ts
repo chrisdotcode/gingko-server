@@ -685,7 +685,7 @@ app.post('/forgot-password', async (req, res) => {
     }
 
     let token = newToken();
-    user.resetToken = hashToken(token); // Consider not hashing token for test user, so we can check it
+    user.resetToken = hashToken(token);
     user.tokenCreatedAt = Date.now();
 
     resetTokenInsert.run(user.resetToken, email, user.tokenCreatedAt);
