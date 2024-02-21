@@ -62,7 +62,7 @@ const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, crea
 const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 
 // Trees Table
-db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER)');
+db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER, publicUrl TEXT)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeById = db.prepare('SELECT * FROM trees WHERE id = ?');
