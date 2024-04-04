@@ -20,7 +20,6 @@ import axios from "axios";
 import sgMail from "@sendgrid/mail";
 import config from "../config.js";
 import Stripe from 'stripe';
-import MailerLite, {CreateOrUpdateSubscriberParams} from '@mailerlite/mailerlite-nodejs';
 
 // Misc
 import _ from "lodash";
@@ -197,10 +196,6 @@ app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({ extended: true }));
 
 sgMail.setApiKey(config.SENDGRID_API_KEY);
-
-const mailerlite = new MailerLite({
-  api_key: config.MAILERLITE_API_KEY
-});
 
 
 /* ==== Start Server ==== */
@@ -560,7 +555,7 @@ app.post('/signup', async (req, res) => {
   let didSubscribe = req.body.subscribed;
   let userDbName = `userdb-${toHex(email)}`;
   const timestamp = Date.now();
-  const confirmTime = didSubscribe ? null : timestamp;
+  const confirmTime = timestamp; //Until we re-implement welcome emails and newsletters, don't show 'confirm your email' message
   const trialExpiry = timestamp + 14*24*3600*1000;
 
   const salt = crypto.randomBytes(16).toString('hex');
@@ -568,15 +563,6 @@ app.post('/signup', async (req, res) => {
   try {
     let userInsertInfo = userSignup.run(email, salt, hash, timestamp, confirmTime, "trial:" + trialExpiry, "en");
     const user = userByRowId.get(userInsertInfo.lastInsertRowid);
-
-    if (email !== "cypress@testing.com" && didSubscribe) {
-      try {
-        const params : CreateOrUpdateSubscriberParams = {'email': email, 'groups': ['97315320365057419'], "status": "unconfirmed"};
-        await mailerlite.subscribers.createOrUpdate(params);
-      } catch (mailErr) {
-        console.error(mailErr);
-      }
-    }
 
     req.session.user = email;
 

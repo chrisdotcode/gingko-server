@@ -11,7 +11,6 @@
   "author": "Adriano Ferrari",
   "license": "ISC",
   "dependencies": {
-    "@mailerlite/mailerlite-nodejs": "^1.2.1",
     "@sendgrid/mail": "^7.4.0",
     "@tpp/hybrid-logical-clock": "^1.0.0",
     "axios": "^1.2.1",
