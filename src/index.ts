@@ -20,6 +20,7 @@ import axios from "axios";
 import sgMail from "@sendgrid/mail";
 import config from "../config.js";
 import Stripe from 'stripe';
+import MailerLite, {CreateOrUpdateSubscriberParams} from '@mailerlite/mailerlite-nodejs';
 
 // Misc
 import _ from "lodash";
@@ -196,6 +197,10 @@ app.use(express.json({limit: '50mb'}));
 app.use(express.urlencoded({ extended: true }));
 
 sgMail.setApiKey(config.SENDGRID_API_KEY);
+
+const mailerlite = new MailerLite({
+  api_key: config.MAILERLITE_API_KEY
+});
 
 
 /* ==== Start Server ==== */
@@ -566,24 +571,8 @@ app.post('/signup', async (req, res) => {
 
     if (email !== "cypress@testing.com" && didSubscribe) {
       try {
-        const options =
-            {
-              url: "https://api.mailerlite.com/api/v2/groups/106198315/subscribers"
-              , method: 'post'
-              , headers: {
-                'Accept': 'application/json'
-                , 'X-MailerLite-ApiDocs': 'true'
-                , 'Content-Type': 'application/json'
-                , 'X-MailerLite-ApiKey': config.MAILERLITE_API_KEY
-              }
-              , data: {
-                email: email
-                , resubscribe: true
-                , autoresponders: true
-                , type: 'unconfirmed'
-              }
-            };
-        axios(options);
+        const params : CreateOrUpdateSubscriberParams = {'email': email, 'groups': ['106198315'], "status": "unconfirmed"};
+        await mailerlite.subscribers.createOrUpdate(params);
       } catch (mailErr) {
         console.error(mailErr);
       }
