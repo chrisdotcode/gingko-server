@@ -571,7 +571,7 @@ app.post('/signup', async (req, res) => {
 
     if (email !== "cypress@testing.com" && didSubscribe) {
       try {
-        const params : CreateOrUpdateSubscriberParams = {'email': email, 'groups': ['106198315'], "status": "unconfirmed"};
+        const params : CreateOrUpdateSubscriberParams = {'email': email, 'groups': ['97315320365057419'], "status": "unconfirmed"};
         await mailerlite.subscribers.createOrUpdate(params);
       } catch (mailErr) {
         console.error(mailErr);
