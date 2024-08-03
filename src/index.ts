@@ -53,6 +53,8 @@ db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, con
 db.exec('CREATE INDEX IF NOT EXISTS cards_treeId ON cards (treeId)');
 db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
 db.exec('CREATE INDEX IF NOT EXISTS tree_snapshots_treeId ON tree_snapshots (treeId)');
+db.exec('CREATE TABLE IF NOT EXISTS feature_flags (user_id TEXT, feature TEXT, enabled BOOLEAN, PRIMARY KEY (user_id, feature), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)');
+db.exec('CREATE TABLE IF NOT EXISTS feature_rollouts (feature TEXT PRIMARY KEY, percent REAL NOT NULL CHECK (percent >= 0 AND percent <= 100) )');
 
 // Users Table
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -181,6 +183,30 @@ const takeSnapshotDebounced = _.memoizeDebounce((treeId) => {
   , { leading: true, trailing: false }
 );
 
+// Feature Flags Table
+const featureFlagsByUser = db.prepare('SELECT feature FROM feature_flags WHERE user_id = ? AND enabled = TRUE').pluck();
+
+// Feature Rollouts Table
+const featureRollouts = db.prepare('SELECT * FROM feature_rollouts');
+
+function getHashedPercentage(email: string, feature: string) {
+  const hash = crypto.createHash('sha256');
+  hash.update(email + feature);
+  const hashHex = hash.digest('hex');
+  // Use the first 8 characters of the hash (32 bits) to get a float
+  const hashInt = parseInt(hashHex.slice(0, 8), 16);
+  const percent = (hashInt / 0xffffffff) * 100; // Convert to percentage
+  console.log(`Hashed percentage for ${email} and ${feature} is ${percent}`);
+  return percent;
+}
+
+function getEnabledFeaturesForUser(userId : string) {
+  const enabledFeatures = featureFlagsByUser.all(userId);
+  const rolloutFeatures = featureRollouts.all().filter(f => getHashedPercentage(userId, f.feature) <= f.percent).map(f => f.feature);
+  const featureSet = new Set([...enabledFeatures, ...rolloutFeatures]);
+  return Array.from(featureSet);
+}
+
 
 /* ==== SETUP ==== */
 
@@ -254,6 +280,7 @@ wss.on('connection', (ws, req) => {
   const userDataUnsafe = userByEmail.get(userId);
   if (userDataUnsafe && userDataUnsafe.paymentStatus) {
     const userData = _.omit(userDataUnsafe, ['salt', 'password']);
+    userData.features = getEnabledFeaturesForUser(userId);
     ws.send(JSON.stringify({t: "user", d: userData}));
   }
 
