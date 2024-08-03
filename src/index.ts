@@ -44,8 +44,17 @@ db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = NORMAL');
 
-// Users Table
+// Create Tables
 db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, salt TEXT, password TEXT, createdAt INTEGER, confirmedAt INTEGER, paymentStatus TEXT, language TEXT)');
+db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
+db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER, migratedTo TEXT, publicUrl TEXT)');
+db.exec(`CREATE TABLE IF NOT EXISTS tree_collaborators ( tree_id TEXT, user_id TEXT, FOREIGN KEY(tree_id) REFERENCES trees(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, UNIQUE(tree_id, user_id) ) `);
+db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
+db.exec('CREATE INDEX IF NOT EXISTS cards_treeId ON cards (treeId)');
+db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
+db.exec('CREATE INDEX IF NOT EXISTS tree_snapshots_treeId ON tree_snapshots (treeId)');
+
+// Users Table
 const userByEmail = db.prepare('SELECT * FROM users WHERE id = ?');
 const userByRowId = db.prepare('SELECT * FROM users WHERE rowid = ?');
 const userSignup = db.prepare('INSERT INTO users (id, salt, password, createdAt, confirmedAt, paymentStatus, language) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -56,13 +65,11 @@ const userSetPaymentStatus = db.prepare('UPDATE users SET paymentStatus = ? WHER
 const expireTestUser = db.prepare("UPDATE users SET paymentStatus='trial:' || CAST(1000*(unixepoch() - 2*24*60*60) AS TEXT) WHERE id = 'cypress@testing.com'");
 
 // Reset Token Table
-db.exec('CREATE TABLE IF NOT EXISTS resetTokens (token TEXT PRIMARY KEY, email TEXT, createdAt INTEGER)');
 const resetToken = db.prepare('SELECT * FROM resetTokens WHERE token = ?');
 const resetTokenInsert = db.prepare('INSERT INTO resetTokens (token, email, createdAt) VALUES (?, ?, ?)');
 const resetTokenDelete = db.prepare('DELETE FROM resetTokens WHERE email = ?');
 
 // Trees Table
-db.exec('CREATE TABLE IF NOT EXISTS trees (id TEXT PRIMARY KEY, name TEXT, location TEXT, owner TEXT, collaborators TEXT, inviteUrl TEXT, createdAt INTEGER, updatedAt INTEGER, deletedAt INTEGER, migratedTo TEXT, publicUrl TEXT)');
 const treesByOwner = db.prepare('SELECT * FROM trees WHERE owner = ?');
 const treeOwner = db.prepare('SELECT owner FROM trees WHERE id = ?').pluck();
 const treeById = db.prepare('SELECT * FROM trees WHERE id = ?');
@@ -93,7 +100,6 @@ const upsertMany = db.transaction((requesterId, treesRecvd) => {
 });
 
 // Collaborators Table
-db.exec(` CREATE TABLE IF NOT EXISTS tree_collaborators ( tree_id TEXT, user_id TEXT, FOREIGN KEY(tree_id) REFERENCES trees(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, UNIQUE(tree_id, user_id) ) `);
 const treeCollaboratorsInsert = db.prepare('INSERT OR REPLACE INTO tree_collaborators (tree_id, user_id) VALUES (?, ?)');
 const treeCollaboratorsDelete = db.prepare('DELETE FROM tree_collaborators WHERE tree_id = ? AND user_id = ?');
 const treeCollaboratorsByTree = db.prepare('SELECT user_id FROM tree_collaborators WHERE tree_id = ?').pluck();
@@ -101,8 +107,6 @@ const treeIdsSharedWithUser = db.prepare('SELECT tree_id FROM tree_collaborators
 const treesSharedWithUser = db.prepare('SELECT * FROM trees WHERE id IN (SELECT tree_id FROM tree_collaborators WHERE user_id = ?)');
 
 // Cards Table
-db.exec('CREATE TABLE IF NOT EXISTS cards (id TEXT PRIMARY KEY, treeId TEXT, content TEXT, parentId TEXT, position FLOAT, updatedAt TEXT, deleted BOOLEAN)');
-db.exec('CREATE INDEX IF NOT EXISTS cards_treeId ON cards (treeId)');
 const cardsSince = db.prepare('SELECT * FROM cards WHERE treeId = ? AND updatedAt > ? ORDER BY updatedAt ASC');
 const cardsAllUndeleted = db.prepare('SELECT * FROM cards WHERE treeId = ? AND deleted = FALSE ORDER BY updatedAt ASC');
 const cardById = db.prepare('SELECT * FROM cards WHERE id = ?');
@@ -114,8 +118,6 @@ const cardDelete = db.prepare('UPDATE cards SET updatedAt = ?, deleted = TRUE WH
 const cardUndelete = db.prepare('UPDATE cards SET deleted = FALSE WHERE id = ?');
 
 // Tree Snapshots Table
-db.exec('CREATE TABLE IF NOT EXISTS tree_snapshots ( snapshot TEXT, treeId TEXT, id TEXT, content TEXT, parentId TEXT, position REAL, updatedAt TEXT, delta BOOLEAN)')
-db.exec('CREATE INDEX IF NOT EXISTS tree_snapshots_treeId ON tree_snapshots (treeId)');
 const takeSnapshotSQL = db.prepare(`
 INSERT INTO tree_snapshots (snapshot, treeId, id, content, parentId, position, updatedAt, delta)
 SELECT
