@@ -50,7 +50,7 @@ jobs:
           echo "Migrating database..."
           COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
           PREFIX=$(echo $COMMIT_MESSAGE | grep -oP 'db:migrate:\K\w+')
-          MIGRATION_FILE=$(ls ../server/scripts/db/$PREFIX* | head -n 1)
+          MIGRATION_FILE=$(ls $GITHUB_WORKSPACE/server/scripts/db/$PREFIX* | head -n 1)
           if [ -f "$MIGRATION_FILE" ]; then
             sqlite3 data.sqlite < "$MIGRATION_FILE"
             echo "Migration $MIGRATION_FILE has been applied"
