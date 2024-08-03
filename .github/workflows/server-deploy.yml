@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     if: "contains(github.event.head_commit.message, '[server deploy]')"
-    runs-on: self-hosted
+    runs-on: [ self-hosted, gingkowriter ]
     defaults:
       run:
         working-directory: server
