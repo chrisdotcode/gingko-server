@@ -4,6 +4,7 @@
   "description": "Server for Gingko 2 web.",
   "main": "index.js",
   "scripts": {
+    "build": "npx tsc",
     "start": "npx tsc -w & nodemon dist/index.js",
     "test": "jest --watch"
   },
