@@ -29,7 +29,9 @@ import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
 import Debug from "debug";
+import getExpanded from "./ai.js";
 const debug = Debug('cards');
+const aiDebug = Debug('ai');
 import morgan from "morgan";
 
 
@@ -288,7 +290,7 @@ wss.on('connection', (ws, req) => {
   const sharedWithUserTrees = treesSharedWithUser.all(userId);
   ws.send(JSON.stringify({t: "trees", d: withCollaboratorArrays([...userTrees, ...sharedWithUserTrees])}));
 
-  ws.on('message', function incoming(message) {
+  ws.on('message', async function incoming(message) {
     try {
       if (message == 'ping') {
         ws.send('pong');
@@ -478,6 +480,29 @@ wss.on('connection', (ws, req) => {
           break;
         }
 
+        case 'ai:generate-children': {
+          // Get the content, treeId, and cardId
+          const cardId = msg.d;
+          const card = cardById.get(cardId);
+          aiDebug('ai:generate-children', card);
+          try {
+            const res = await getExpanded(card.content);
+
+            db.transaction(() => {
+              res.forEach((content, i) => {
+                const newCardId = uuid.v4();
+                const ts = hlc.nxt();
+                aiDebug('ai:generate-children', newCardId, card.treeId, content, cardId, ts);
+                cardInsert.run(ts, newCardId, card.treeId, content, cardId, i, 0);
+              })
+            }).immediate();
+
+            ws.send(JSON.stringify({t: 'doPull', d: card.treeId}));
+          } catch (e) {
+            console.error(e);
+          }
+          break;
+        }
 
 
         default:
