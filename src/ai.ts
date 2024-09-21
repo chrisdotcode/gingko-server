@@ -1,13 +1,13 @@
 // @ts-ignore
 import config from "../config.js";
 
-const systemPrompt = `You are an API for expaning text, while maintaining the original style, tone, and meaning. The original text represents one "chunk" of content at a given level-of-detail, and your job is to return a few "chunks" of expanded content. This is for a structured text editor, that allows the user to progressively add more details in "layers".`
+const systemPrompt = 'You are an API for generating text in a structured document editor.'
 
 const toolInfo = {
-  "tool_choice": {"type": "tool", "name": "expand-text"},
+  "tool_choice": {"type": "tool", "name": "insert-children"},
   "tools": [
-    { "name": "expand-text"
-      , "description": "Return an expanded version of the input text, maintaining the original style, tone, and meaning. The expanded text should be roughly 2 to 3 times longer than the input. The expanded text should be split into meaningful 'chunks'. The chunks should be roughly equal in length, and returns as an array of strings. If the content is fiction, you may add new elements and ideas that were not present in the original. If the content is non-fiction, you may add more details but try to stick to the original content more closely. In either case, DO NOT EXCEED three times the original length, even if keeping it short would lose out some details."
+    { "name": "insert-children"
+      , "description": "Use the prompt marked PROMPT:INSERT_CHILDREN to generate text sections that will be children of that section. Use the rest of the document as context. Try to keep the number of generated sections to 2-5, and group related sections into one. Do not number the sections."
       , "input_schema": {"type": "object", "properties": {"output": {"type": "array", "items": {"type": "string"}}}}
     }
   ]
@@ -19,7 +19,7 @@ function userMessage(text: string) : UserMessage {
   return {"role": "user", "content": [{"type":"text", "text": text}]};
 }
 
-export default async function getExpanded(input : string) {
+export default async function insertChildren(input : string) {
   const msg = {
     model: "claude-3-5-sonnet-20240620",
     max_tokens: 4096,
