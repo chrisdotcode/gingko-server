@@ -29,7 +29,7 @@ import URLSafeBase64 from "urlsafe-base64";
 import * as uuid from "uuid";
 import hlc from "@tpp/hybrid-logical-clock";
 import Debug from "debug";
-import insertChildren from "./ai.js";
+import * as ai from "./ai.js";
 const debug = Debug('cards');
 const aiDebug = Debug('ai');
 import morgan from "morgan";
@@ -487,7 +487,7 @@ wss.on('connection', (ws, req) => {
           const card = cardById.get(cardId);
           aiDebug('ai:generate-children', card, prompt);
           try {
-            const res = await insertChildren(prompt);
+            const res = await ai.insertChildren(prompt);
 
             db.transaction(() => {
               res.forEach((content, i) => {
@@ -495,6 +495,31 @@ wss.on('connection', (ws, req) => {
                 const ts = hlc.nxt();
                 aiDebug('ai:generate-children', newCardId, card.treeId, content, cardId, ts);
                 cardInsert.run(ts, newCardId, card.treeId, content, cardId, i, 0);
+              })
+            }).immediate();
+
+            ws.send(JSON.stringify({t: 'ai:success', d: {t: card.treeId, i: cardId}}));
+          } catch (e) {
+            console.error(e);
+          }
+          break;
+        }
+
+        case 'ai:generate-below': {
+          // Get the content, treeId, and cardId
+          const cardId = msg.d.id;
+          const prompt = msg.d.prompt;
+          const card = cardById.get(cardId);
+          aiDebug('ai:generate-below', card, prompt);
+          try {
+            const res = await ai.insertBelow(prompt);
+
+            db.transaction(() => {
+              res.forEach((content, i) => {
+                const newCardId = uuid.v4();
+                const ts = hlc.nxt();
+                aiDebug('ai:generate-below', newCardId, card.treeId, content, cardId, ts);
+                cardInsert.run(ts, newCardId, card.treeId, content, card.parentId, card.position + i, 0);
               })
             }).immediate();
 
