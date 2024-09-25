@@ -498,7 +498,7 @@ wss.on('connection', (ws, req) => {
               })
             }).immediate();
 
-            ws.send(JSON.stringify({t: 'doPull', d: card.treeId}));
+            ws.send(JSON.stringify({t: 'ai:success', d: {t: card.treeId, i: cardId}}));
           } catch (e) {
             console.error(e);
           }
