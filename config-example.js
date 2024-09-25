@@ -13,5 +13,5 @@ export default {
   NTFY_URL: "https://ntfy.sh/my_topic",
   STRIPE_SECRET_KEY: "sk_test_123412341234",
   URL_ROOT: "https://app.example.com",
-  ANTHROPIC_API_KEY: "123412341234",
+  ANTHROPIC_API_KEY: "1234123412344",
 };
