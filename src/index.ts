@@ -480,6 +480,19 @@ wss.on('connection', (ws, req) => {
           break;
         }
 
+        case 'ai:generate-new': {
+          const prompt = msg.d;
+          aiDebug('ai:generate-new', prompt);
+          try {
+            const res = await ai.newDocument(prompt);
+
+            ws.send(JSON.stringify({t: 'ai:generate-new', d: res}));
+          } catch (e) {
+            console.error(e);
+          }
+          break;
+        }
+
         case 'ai:generate-children': {
           // Get the content, treeId, and cardId
           const cardId = msg.d.id;
