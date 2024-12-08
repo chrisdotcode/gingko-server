@@ -28,4 +28,6 @@ RUN mv config-example.js config.js
 RUN npm install
 RUN npm run build
 
-CMD npm start
+EXPOSE 3000
+
+CMD node dist/index.js
