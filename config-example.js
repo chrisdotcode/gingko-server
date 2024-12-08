@@ -1,4 +1,6 @@
 export default {
+  COUCHDB_URL: process.env.COUCHDB_URL,
+  COUCHDB_PORT: process.env.COUCHDB_PORT,
   COUCHDB_USER: process.env.COUCHDB_USER,
   COUCHDB_PASS: process.env.COUCHDB_PASS,
   COUCHDB_SECRET: process.env.COUCHDB_SECRET,

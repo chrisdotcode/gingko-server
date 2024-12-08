@@ -212,7 +212,7 @@ function getEnabledFeaturesForUser(userId : string) {
 
 /* ==== SETUP ==== */
 
-const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@127.0.0.1:5984`);
+const nano = Nano(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@${config.COUCHDB_URL}:${config.COUCHDB_PORT}`);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -837,7 +837,7 @@ app.get('/public/:page', (req, res) => {
 
 /* ==== DB proxy ==== */
 
-app.use('/db', proxy('http://127.0.0.1:5984', {
+app.use('/db', proxy(`http://${config.COUCHDB_URL}:${config.COUCHDB_PORT}`, {
   proxyReqOptDecorator: function(proxyReqOpts, srcReq) {
     if (srcReq.session.user) {
       proxyReqOpts.headers['X-Auth-CouchDB-UserName'] = srcReq.session.user;

@@ -1,5 +1,5 @@
 const config = require("./config.js");
-const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@localhost:5984`);
+const nano = require('nano')(`http://${config.COUCHDB_USER}:${config.COUCHDB_PASS}@${config.COUCHDB_URL}:${config.COUCHDB_PORT}`);
 const usersDB = nano.use("_users");
 const v8 = require('v8');
 

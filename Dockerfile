@@ -1,5 +1,7 @@
 FROM node:23
 
+ENV COUCHDB_URL="couchdb"
+ENV COUCHDB_PORT=5984
 ENV COUCHDB_USER="couchusername"
 ENV COUCHDB_PASS="couchpassword"
 ENV COUCHDB_SECRET="couchsecret"
