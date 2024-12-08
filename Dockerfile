@@ -17,6 +17,7 @@ ENV NTFY_URL="https://ntfy.sh/my_topic"
 ENV STRIPE_SECRET_KEY="sk_test_123412341234"
 ENV ANTHROPIC_API_KEY="1234123412344"
 ENV URL_ROOT="https://localhost:3000"
+ENV REDIS_URL="redis://redis"
 
 WORKDIR /www/gingkowriter.com/server
 

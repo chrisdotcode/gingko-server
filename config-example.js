@@ -16,4 +16,5 @@ export default {
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   URL_ROOT: process.env.URL_ROOT,
+  REDIS_URL: process.env.REDIS_URL,
 };

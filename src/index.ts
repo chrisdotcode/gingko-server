@@ -235,7 +235,7 @@ const server = app.listen(port, () => console.log(`Example app listening at http
 // Session
 
 const RedisStore = redisConnect(session);
-const redis = createClient({legacyMode: true});
+const redis = createClient({ url: config.REDIS_URL, legacyMode: true});
 
 const sessionParser = session({
     store: new RedisStore({ client: redis }),
